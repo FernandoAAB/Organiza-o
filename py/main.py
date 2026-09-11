@@ -568,6 +568,112 @@ def comparar_debitos_a1_a2():
         "\nPressione ENTER para voltar..."
     )
 
+# IMPRIMIR DÉBITOS DO A1 x A2 (VIA NAVEGADOR / HTML)
+def imprimir_debitos_a1_a2():
+    import webbrowser
+    """Gera um relatório em HTML formatado e abre no navegador pronto para Ctrl+P."""
+    origem = carregar_origem_numerada()
+    destino = carregar_linhas(ARQUIVO_DESTINO)
+    
+    debitos_a2 = set()
+    for item in destino:
+        texto = extrair_texto_registro(item)
+        valor = extrair_valor_debito(texto)
+        if valor is not None:
+            debitos_a2.add(valor)
+            
+    total_debitos = 0
+    total_faltando = 0
+    linhas_tabela = ""
+    
+    for numero, texto in origem:
+        valor = extrair_valor_debito(texto)
+        if valor is None:
+            continue
+        total_debitos += 1
+        
+        if valor in debitos_a2:
+            status_html = '<span class="ok">OK</span>'
+            classe_linha = ""
+        else:
+            total_faltando += 1
+            status_html = '<span class="falta">FALTA NO A2</span>'
+            classe_linha = 'style="color: red; font-weight: bold;"'
+            
+        linhas_tabela += f"""
+        <tr {classe_linha}>
+            <td style="text-align: center;">{numero}</td>
+            <td>{texto}</td>
+            <td style="text-align: center;">{status_html}</td>
+        </tr>
+        """
+        
+    # Conteúdo HTML com estilo corporativo limpo
+    html_conteudo = f"""<!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <title>Comparação de Débitos - A1 x A2</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
+            h2, p {{ text-align: center; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th, td {{ border: 1px solid #ccc; padding: 8px 12px; font-size: 14px; }}
+            th {{ background-color: #f4f4f4; }}
+            .ok {{ color: green; font-weight: bold; }}
+            .falta {{ color: red; font-weight: bold; }}
+            .resumo {{ margin-top: 20px; font-size: 15px; }}
+            @media print {{
+                .nao-imprimir {{ display: none; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <h2>Relatório de Comparação de Débitos: A1 x A2</h2>
+        <p>Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 10%;">Linha A1</th>
+                    <th style="width: 70%;">Registro</th>
+                    <th style="width: 20%;">Situação</th>
+                </tr>
+            </thead>
+            <tbody>
+                {linhas_tabela}
+            </tbody>
+        </table>
+        
+        <div class="resumo">
+            <p><b>Débitos no A1:</b> {total_debitos} | <<b>Débitos faltando no A2:</b> {total_faltando}</p>
+        </div>
+
+        <div class="nao-imprimir" style="text-align: center; margin-top: 30px;">
+            <button onclick="window.print();" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #007BFF; color: #fff; border: none; border-radius: 5px;">Imprimir Relatório</button>
+        </div>
+    </body>
+    </html>
+    """
+    
+    caminho_html = os.path.join(PASTA_REG, "relatorio_debitos.html")
+    with open(caminho_html, "w", encoding="utf-8") as f:
+        f.write(html_conteudo)
+        
+    try:
+        # Abre diretamente no navegador padrão do usuário
+        caminho_url = "file:///" + os.path.abspath(caminho_html).replace("\\", "/")
+        webbrowser.open(caminho_url)
+        
+        limpar_tela()
+        console.print("[green]Relatório gerado e aberto no navegador com sucesso![/green]")
+        console.print("[yellow]Basta usar o botão na tela ou pressionar Ctrl+P para imprimir perfeitamente.[/yellow]")
+    except Exception as e:
+        limpar_tela()
+        console.print(f"[red]Erro ao abrir no navegador: {e}[/red]")
+
+    input("\nPressione ENTER para voltar...")
+
 # MENU
 
 def menu():
@@ -579,6 +685,7 @@ def menu():
             ("[B]", "Buscar no arquivo principal"),
             ("[BL]", "Buscar na lista de destino"),
             ("[D]", "Comparar débitos A1 x A2"),
+            ("[I]", "Imprimir relatório de débitos"),
             ("[P]", "Exportar para No/N.txt"),
             ("[S]", "Sair"),
         ]
@@ -705,7 +812,8 @@ def menu():
                     input(
                         "\nPressione ENTER para voltar..."
                     )
-        
+        elif opcao_up == "I":
+            imprimir_debitos_a1_a2()
         # EXPORTAR
         elif opcao_up == "P":
             linhas_ordenadas = (
