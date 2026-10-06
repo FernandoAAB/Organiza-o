@@ -1,3 +1,7 @@
+# Interface
+![image](https://github.com/FernandoAAB/Organiza-o/blob/main/Interface.png)
+
+# Diagrama
 ![image](https://github.com/FernandoAAB/Organiza-o/blob/main/Diagrama.png)
 
 Este é um aplicativo de terminal português para revisar registros em A1, selecionar ou pesquisar entradas em A2 e comparar registros de débito para um relatório imprimível.
