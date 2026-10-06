@@ -1,866 +1,515 @@
-from rich.align import Align
-from rich.box import ROUNDED
-from rich.console import Console
-from rich.table import Table
-from rich.prompt import Prompt
-from rich.panel import Panel
-
-console = Console(width=140, force_terminal=True, legacy_windows=True)
-
-from datetime import datetime
+import json
 import os
+import re
+import webbrowser
+import tkinter as tk
+from datetime import datetime
+from tkinter import ttk, messagebox
+
+import customtkinter as ctk  # pip install customtkinter
 
 ARQUIVO_ORIGEM = "a1.txt"
 ARQUIVO_DESTINO = "a2.txt"
 PASTA_REG = "No"
-def limpar_tela():
-    os.system("cls" if os.name == "nt" else "clear")
+CONFIG = os.path.join(PASTA_REG, "config.json")
+
+
+# TEMAS  (cada cor: (claro, escuro))
+
+TEMAS = {
+    "bg": ("#eef0f4", "#14151a"),
+    "painel": ("#ffffff", "#1c1e26"),
+    "campo": ("#e5e7eb", "#2a2d38"),
+    "campo_hover": ("#d1d5db", "#353948"),
+    "texto": ("#111827", "#e5e7eb"),
+    "cinza": ("#6b7280", "#6b7280"),
+    "cabecalho": ("#4b5563", "#9ca3af"),
+    "verde": ("#15803d", "#4ade80"),
+    "vermelho": ("#dc2626", "#f87171"),
+    "perigo": ("#fde2e4", "#3a1d22"),
+    "perigo_hover": ("#fbcfd4", "#5a2530"),
+}
+ACENTOS = {  # (normal, hover)
+    "Azul": ("#3b82f6", "#2563eb"),
+    "Verde": ("#22c55e", "#16a34a"),
+    "Roxo": ("#8b5cf6", "#7c3aed"),
+    "Laranja": ("#f97316", "#ea580c"),
+    "Rosa": ("#ec4899", "#db2777"),
+}
+
+
+def c(chave):
+    """Cor com as duas variações (CustomTkinter troca sozinho)."""
+    return TEMAS[chave]
+
+
+def cm(chave, modo):
+    """Cor única para widgets ttk, conforme o modo atual."""
+    return TEMAS[chave][0 if modo == "Claro" else 1]
+
+
+def carregar_config():
+    try:
+        with open(CONFIG, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+        modo = dados.get("tema", "Escuro")
+        acento = dados.get("acento", "Azul")
+        return (modo if modo in ("Escuro", "Claro") else "Escuro",
+                acento if acento in ACENTOS else "Azul")
+    except (OSError, ValueError):
+        return "Escuro", "Azul"
+
+
+def salvar_config(modo, acento):
+    try:
+        os.makedirs(PASTA_REG, exist_ok=True)
+        with open(CONFIG, "w", encoding="utf-8") as f:
+            json.dump({"tema": modo, "acento": acento}, f)
+    except OSError:
+        pass
+
+
+
+# LÓGICA (mesmas regras do script original)
 
 def inicializar_arquivos():
-    """Garante que os arquivos e pastas essenciais existam."""
     for arquivo in (ARQUIVO_ORIGEM, ARQUIVO_DESTINO):
         if not os.path.exists(arquivo):
-            open(
-                arquivo,
-                "w",
-                encoding="utf-8"
-            ).close()
+            open(arquivo, "w", encoding="utf-8").close()
+    caminho_log = os.path.join(PASTA_REG, "data.log")
     if not os.path.exists(PASTA_REG):
         os.makedirs(PASTA_REG)
-        caminho_log = os.path.join(
-            PASTA_REG,
-            "data.log"
-        )
-        with open(
-            caminho_log,
-            "w",
-            encoding="utf-8"
-        ) as f:
-            f.write(
-                datetime.now().strftime(
-                    "%d/%m/%Y"
-                )
-            )
+        with open(caminho_log, "w", encoding="utf-8") as f:
+            f.write(datetime.now().strftime("%d/%m/%Y"))
     else:
         verificar_dias()
 
+
 def verificar_dias():
-    """Calcula a diferença de dias desde a criação da pasta."""
-    caminho_log = os.path.join(
-        PASTA_REG,
-        "data.log"
-    )
-    if os.path.exists(caminho_log):
-        try:
-            with open(
-                caminho_log,
-                "r",
-                encoding="utf-8"
-            ) as f:
-                data_inicial = datetime.strptime(
-                    f.read().strip(),
-                    "%d/%m/%Y"
-                )
-            dias = (
-                datetime.now() - data_inicial
-            ).days
-            caminho_dias = os.path.join(
-                PASTA_REG,
-                "data1.log"
-            )
-            with open(
-                caminho_dias,
-                "w",
-                encoding="utf-8"
-            ) as f:
-                f.write(
-                    f"A diferença de dias é: {dias}"
-                )
-        except ValueError:
-            pass
+    caminho_log = os.path.join(PASTA_REG, "data.log")
+    if not os.path.exists(caminho_log):
+        return
+    try:
+        with open(caminho_log, "r", encoding="utf-8") as f:
+            data_inicial = datetime.strptime(f.read().strip(), "%d/%m/%Y")
+        dias = (datetime.now() - data_inicial).days
+        with open(os.path.join(PASTA_REG, "data1.log"), "w", encoding="utf-8") as f:
+            f.write(f"A diferença de dias é: {dias}")
+    except ValueError:
+        pass
+
 
 def carregar_linhas(nome_arquivo):
-    """Carrega linhas não vazias de um arquivo."""
     if not os.path.exists(nome_arquivo):
         return []
-    with open(
-        nome_arquivo,
-        "r",
-        encoding="utf-8"
-    ) as f:
-        return [
-            linha.strip()
-            for linha in f
-            if linha.strip()
-        ]
+    with open(nome_arquivo, "r", encoding="utf-8") as f:
+        return [l.strip() for l in f if l.strip()]
 
 
-def carregar_origem_numerada(): # CARREGAR A1 NUMERADO
-    """
-    Lê o a1.txt sem modificar o arquivo.
-    Retorna:
-        [(numero_da_linha, texto), ...]
-    Exemplo:
-        [(1, "JOAO"), (3, "JOAO")]
-    """
+def carregar_origem_numerada():
+    """[(numero_da_linha, texto), ...] sem modificar o a1.txt"""
     if not os.path.exists(ARQUIVO_ORIGEM):
         return []
     linhas = []
-    with open(
-        ARQUIVO_ORIGEM,
-        "r",
-        encoding="utf-8"
-    ) as f:
-        for numero, linha in enumerate(
-            f,
-            start=1
-        ):
+    with open(ARQUIVO_ORIGEM, "r", encoding="utf-8") as f:
+        for numero, linha in enumerate(f, start=1):
             linha = linha.strip()
             if linha:
-                linhas.append(
-                    (numero, linha)
-                )
+                linhas.append((numero, linha))
     return linhas
 
 
-def salvar_linhas(
-    nome_arquivo,
-    linhas
-):
-    """Salva uma lista de linhas em um arquivo."""
-    with open(
-        nome_arquivo,
-        "w",
-        encoding="utf-8"
-    ) as f:
+def salvar_linhas(nome_arquivo, linhas):
+    with open(nome_arquivo, "w", encoding="utf-8") as f:
         for linha in linhas:
-            f.write(
-                linha + "\n"
-            )
+            f.write(linha + "\n")
 
 
 def extrair_numero(linha):
-    """
-    Extrai o número entre [ ].
-    Exemplo:
-        [25] JOAO
-    retorna:
-        25
-    """
     try:
         if linha.startswith("["):
-            fim = linha.index("]")
-            return int(
-                linha[1:fim]
-            )
-    except (
-        ValueError,
-        IndexError
-    ):
+            return int(linha[1:linha.index("]")])
+    except (ValueError, IndexError):
         pass
     return 999999
 
 
-def obter_destino_ordenado():
-    """Carrega o a2.txt e ordena pela linha original."""
-    linhas = carregar_linhas(
-        ARQUIVO_DESTINO
-    )
-    return sorted(
-        linhas,
-        key=extrair_numero
-    )
 def extrair_texto_registro(item):
-    """Remove a numeração do formato [N] texto e retorna apenas o texto."""
-    texto = item
     if item.startswith("["):
         try:
-            fim = item.index("]")
-            texto = item[fim + 1:].strip()
+            return item[item.index("]") + 1:].strip()
         except ValueError:
             pass
-    return texto
-def criar_tabela_padrao(titulo):
-    """Gera o estilo visual padronizado das tabelas do sistema."""
-    return Table(
-        title=titulo,
-        title_style="bold cyan",
-        header_style="bold white",
-        box=ROUNDED,
-        show_lines=False,
-        expand=False,
-        padding=(0, 1),
-        pad_edge=False,
-    )
+    return item
 
 
-def criar_tabela_a1( # TABELA DO A1
-    linhas,
-    escolhido=None
-):
-    """
-    Cria a tabela do A1.
-    escolhido:
-        número da escolha que acabou de ser adicionada.
-    O ✓ é somente visual.
-    Não é salvo em nenhum arquivo.
-    """
-    table = criar_tabela_padrao(
-        "RESULTADO ENCONTRADO - A1.TXT"
-    )
-    table.add_column(
-        "Escolha",
-        style="bold yellow",
-        justify="center",
-        width=8,
-    )
-    table.add_column(
-        "Status",
-        style="bold green",
-        justify="center",
-        width=8,
-    )
-    table.add_column(
-        "Linha",
-        style="bold yellow",
-        justify="center",
-        width=12,
-        min_width=12,
-        no_wrap=True,
-    )
-    table.add_column(
-        "Registro",
-        style="bold white",
-        overflow="fold",
-        no_wrap=False,
-    )
-    for indice, (numero, texto) in enumerate(
-        linhas,
-        start=1
-    ):
-        if escolhido == indice:
-            table.add_row(
-                str(indice),
-                "[green]✓[/green]",
-                f"[green]{numero}[/green]",
-                f"[green]{texto}[/green]"
-            )
-        else:
-            table.add_row(
-                str(indice),
-                "",
-                str(numero),
-                texto
-            )
-    return table
+def obter_destino_ordenado():
+    return sorted(carregar_linhas(ARQUIVO_DESTINO), key=extrair_numero)
 
 
-def criar_tabela_a2(item_recente=None): # TABELA DO A2
-    """
-    Cria a tabela com o conteúdo atual do A2.
-    Mantém a ordenação pelo número original.
-    """
-    linhas = obter_destino_ordenado()
-    table = criar_tabela_padrao(
-        "A2.TXT - LISTA ATUALIZADA"
-    )
-    table.add_column(
-        "Linha",
-        style="bold yellow",
-        justify="center",
-        width=12,
-        min_width=12,
-        no_wrap=True,
-    )
-    table.add_column(
-        "Registro",
-        style="bold white",
-        overflow="fold",
-        no_wrap=False,
-    )
-    for item in linhas:
-        numero = extrair_numero(item)
-        texto = extrair_texto_registro(item)
-        if item_recente is not None and item == item_recente:
-            table.add_row(
-                f"[bold green]{str(numero)}[/bold green]",
-                f"[bold green]{texto}[/bold green]",
-            )
-        else:
-            table.add_row(
-                str(numero),
-                texto,
-            )
-    return table
-
-
-def exibir_tabela_a2(): # EXIBIR A2
-    """Mostra a tabela atualizada do A2."""
-    limpar_tela()
-    console.print(
-        criar_tabela_a2()
-    )
-    input(
-        "\nPressione ENTER para voltar..."
-    )
-
-def adicionar_itens_por_termo(termo):
-    origem = carregar_origem_numerada()
-    destino = carregar_linhas(
-        ARQUIVO_DESTINO
-    )
-    # PROCURA NO A1
-    correspondencias = [
-        (numero, texto)
-        for numero, texto in origem
-        if termo.lower() in texto.lower()
-    ]
-    if not correspondencias:
-        return 0, []
-    # REMOVE OS QUE JÁ ESTÃO NO A2
-    disponiveis = []
-    for numero, texto in correspondencias:
-        item = f"[{numero}] {texto}"
-        if item not in destino:
-            disponiveis.append(
-                (numero, texto)
-            )
-    if not disponiveis:
-        return 0, correspondencias
-    # APENAS 1 RESULTADO
-    # ADICIONA DIRETO
-    if len(disponiveis) == 1:
-        numero, texto = disponiveis[0]
-        item = f"[{numero}] {texto}"
-        destino.append(item)
-        destino.sort(
-            key=extrair_numero
-        )
-        salvar_linhas(
-            ARQUIVO_DESTINO,
-            destino
-        )
-        # MOSTRA TABELA A1 COM ✓
-        limpar_tela()
-        console.print(
-            criar_tabela_a1(
-                disponiveis,
-                escolhido=1
-            )
-        )
-        console.print()
-        # MOSTRA TABELA A2
-        console.print(
-            criar_tabela_a2(item_recente=item)
-        )
-        input(
-            "\nPressione ENTER para continuar..."
-        )
-        return 1, [item]
-
-    # VÁRIOS RESULTADOS
-    # AQUI SIM PERGUNTA
-    limpar_tela()
-    console.print(
-        criar_tabela_a1(
-            disponiveis
-        )
-    )
-    console.print(
-        "\n[red][0][/red] Cancelar"
-    )
-    # ESCOLHA
-    while True:
-        escolha = Prompt.ask(
-            "Qual deseja adicionar",
-            default="0"
-        )
-        if escolha == "0":
-            return 0, correspondencias
-        try:
-            escolha = int(
-                escolha
-            )
-        except ValueError:
-            console.print(
-                "[red]Digite apenas um número.[/red]"
-            )
-            continue
-        if (
-            escolha < 1
-            or escolha > len(disponiveis)
-        ):
-            console.print(
-                "[red]Opção inválida.[/red]"
-            )
-            continue
-        
-        # PEGA O ESCOLHIDO
-        numero, texto = (
-            disponiveis[
-                escolha - 1
-            ]
-        )
-        item = (
-            f"[{numero}] {texto}"
-        )
-
-        # ADICIONA AO A2
-        destino.append(
-            item
-        )
-        destino.sort(
-            key=extrair_numero
-        )
-        salvar_linhas(
-            ARQUIVO_DESTINO,
-            destino
-        )
-
-        # MOSTRA AS DUAS TABELAS
-        limpar_tela()
-        # TABELA A1
-        # ✓ SOMENTE NO ESCOLHIDO
-        console.print(
-            criar_tabela_a1(
-                disponiveis,
-                escolhido=escolha
-            )
-        )
-        console.print()
-        # TABELA A2
-        console.print(
-            criar_tabela_a2(item_recente=item)
-        )
-        # ESPERA
-        input(
-            "\nPressione ENTER para continuar..."
-        )
-        return 1, [item]
-
-
-# EXTRAIR VALOR DO DÉBITO
 def extrair_valor_debito(texto):
-    """
-    Procura um valor seguido de D.
-    Exemplos:
-        102,00 D  -> 102,00
-        1.250,50 D -> 1.250,50
-    Registros com C não são considerados.
-    """
-    import re
-    texto = texto.strip().upper()
-    # Procura valores como:
-    # 102,00 D
-    # 1.250,50 D
-    # 102.00 D
-    padrao = r'(\d[\d\.,]*)\s*D\b'
-    encontrados = re.findall(
-        padrao,
-        texto
-    )
-    if encontrados:
-        return encontrados[0]
-    return None
-# COMPARAR DÉBITOS DO A1 COM A2
-def comparar_debitos_a1_a2():
-    origem = carregar_origem_numerada()
-    destino = carregar_linhas(
-        ARQUIVO_DESTINO
-    )
-    # PEGA SOMENTE OS VALORES DE DÉBITO DO A2
-    debitos_a2 = set()
-    for item in destino:
-        texto = extrair_texto_registro(
-            item
-        )
-        valor = extrair_valor_debito(
-            texto
-        )
-        if valor is not None:
-            debitos_a2.add(
-                valor
-            )
-    # CRIA TABELA
-    table = Table(
-        title="DÉBITOS DO A1 x A2",
-        title_style="bold cyan",
-        header_style="bold white",
-        box=ROUNDED,
-        show_lines=False,
-        expand=True,
-        padding=(0, 1),
-        pad_edge=False,
-    )
-    table.add_column(
-        "Linha A1",
-        style="bold yellow",
-        justify="center",
-        width=10,
-        min_width=10,
-        max_width=10,
-        no_wrap=True,
-    )
-    table.add_column(
-        "Registro",
-        style="bold white",
-        justify="left",
-        no_wrap=True,
-        overflow="ignore",
-    )
-    table.add_column(
-        "Situação",
-        justify="center",
-        width=18,
-        min_width=18,
-        max_width=18,
-        no_wrap=True,
-    )
-    total_debitos = 0
-    total_faltando = 0
-    
-    # PERCORRE O A1
-    
-    for numero, texto in origem:
-        valor = extrair_valor_debito(
-            texto
-        )
-        # IGNORA REGISTROS SEM D
-        if valor is None:
-            continue
-        total_debitos += 1
-        # EXISTE NO A2?
-        if valor in debitos_a2:
-            table.add_row(
-                str(numero),
-                texto,
-                "[green]OK[/green]"
-            )
-        else:
-            total_faltando += 1
-            table.add_row(
-                f"[bold red]{numero}[/bold red]",
-                f"[bold red]{texto}[/bold red]",
-                "[bold red]FALTA NO A2[/bold red]"
-            )
+    encontrados = re.findall(r"(\d[\d\.,]*)\s*D\b", texto.strip().upper())
+    return encontrados[0] if encontrados else None
 
-    # EXIBIR RESULTADO
-    limpar_tela()
-    console.print(
-        table,
-        crop=False,
-        overflow="ignore"
-    )
-    console.print()
-    console.print(
-        f"[bold cyan]Débitos no A1:[/bold cyan] "
-        f"{total_debitos}"
-    )
-    console.print(
-        f"[bold red]Débitos faltando no A2:[/bold red] "
-        f"{total_faltando}"
-    )
-    console.print()
-    console.print(
-        "[bold red]VERMELHO = débito existente no A1 e ausente no A2[/bold red]"
-    )
-    input(
-        "\nPressione ENTER para voltar..."
-    )
 
-# IMPRIMIR DÉBITOS DO A1 x A2 (VIA NAVEGADOR / HTML)
-def imprimir_debitos_a1_a2():
-    import webbrowser
-    """Gera um relatório em HTML formatado e abre no navegador pronto para Ctrl+P."""
-    origem = carregar_origem_numerada()
-    destino = carregar_linhas(ARQUIVO_DESTINO)
-    
+def calcular_debitos():
+    """Retorna (lista[(numero, texto, ok)], total, faltando)."""
     debitos_a2 = set()
-    for item in destino:
-        texto = extrair_texto_registro(item)
-        valor = extrair_valor_debito(texto)
+    for item in carregar_linhas(ARQUIVO_DESTINO):
+        valor = extrair_valor_debito(extrair_texto_registro(item))
         if valor is not None:
             debitos_a2.add(valor)
-            
-    total_debitos = 0
-    total_faltando = 0
-    linhas_tabela = ""
-    
-    for numero, texto in origem:
+
+    resultado, faltando = [], 0
+    for numero, texto in carregar_origem_numerada():
         valor = extrair_valor_debito(texto)
         if valor is None:
             continue
-        total_debitos += 1
-        
-        if valor in debitos_a2:
-            status_html = '<span class="ok">OK</span>'
-            classe_linha = ""
+        ok = valor in debitos_a2
+        if not ok:
+            faltando += 1
+        resultado.append((numero, texto, ok))
+    return resultado, len(resultado), faltando
+
+
+def gerar_relatorio_html():
+    resultado, total, faltando = calcular_debitos()
+    linhas = ""
+    for numero, texto, ok in resultado:
+        if ok:
+            linhas += (f'<tr><td style="text-align:center;">{numero}</td><td>{texto}</td>'
+                       f'<td style="text-align:center;"><span class="ok">OK</span></td></tr>')
         else:
-            total_faltando += 1
-            status_html = '<span class="falta">FALTA NO A2</span>'
-            classe_linha = 'style="color: red; font-weight: bold;"'
-            
-        linhas_tabela += f"""
-        <tr {classe_linha}>
-            <td style="text-align: center;">{numero}</td>
-            <td>{texto}</td>
-            <td style="text-align: center;">{status_html}</td>
-        </tr>
-        """
-        
-    # Conteúdo HTML com estilo corporativo limpo
-    html_conteudo = f"""<!DOCTYPE html>
-    <html lang="pt-BR">
-    <head>
-        <meta charset="UTF-8">
-        <title>Comparação de Débitos - A1 x A2</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
-            h2, p {{ text-align: center; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-            th, td {{ border: 1px solid #ccc; padding: 8px 12px; font-size: 14px; }}
-            th {{ background-color: #f4f4f4; }}
-            .ok {{ color: green; font-weight: bold; }}
-            .falta {{ color: red; font-weight: bold; }}
-            .resumo {{ margin-top: 20px; font-size: 15px; }}
-            @media print {{
-                .nao-imprimir {{ display: none; }}
-            }}
-        </style>
-    </head>
-    <body>
-        <h2>Relatório de Comparação de Débitos: A1 x A2</h2>
-        <p>Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
-        
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 10%;">Linha A1</th>
-                    <th style="width: 70%;">Registro</th>
-                    <th style="width: 20%;">Situação</th>
-                </tr>
-            </thead>
-            <tbody>
-                {linhas_tabela}
-            </tbody>
-        </table>
-        
-        <div class="resumo">
-            <p><b>Débitos no A1:</b> {total_debitos} | <<b>Débitos faltando no A2:</b> {total_faltando}</p>
-        </div>
+            linhas += (f'<tr style="color:red;font-weight:bold;"><td style="text-align:center;">{numero}</td>'
+                       f'<td>{texto}</td><td style="text-align:center;"><span class="falta">FALTA NO A2</span></td></tr>')
 
-        <div class="nao-imprimir" style="text-align: center; margin-top: 30px;">
-            <button onclick="window.print();" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #007BFF; color: #fff; border: none; border-radius: 5px;">Imprimir Relatório</button>
-        </div>
-    </body>
-    </html>
-    """
-    
-    caminho_html = os.path.join(PASTA_REG, "relatorio_debitos.html")
-    with open(caminho_html, "w", encoding="utf-8") as f:
-        f.write(html_conteudo)
-        
-    try:
-        # Abre diretamente no navegador padrão do usuário
-        caminho_url = "file:///" + os.path.abspath(caminho_html).replace("\\", "/")
-        webbrowser.open(caminho_url)
-        
-        limpar_tela()
-        console.print("[green]Relatório gerado e aberto no navegador com sucesso![/green]")
-        console.print("[yellow]Basta usar o botão na tela ou pressionar Ctrl+P para imprimir perfeitamente.[/yellow]")
-    except Exception as e:
-        limpar_tela()
-        console.print(f"[red]Erro ao abrir no navegador: {e}[/red]")
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Comparação de Débitos - A1 x A2</title>
+<style>
+body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
+h2, p {{ text-align: center; }}
+table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+th, td {{ border: 1px solid #ccc; padding: 8px 12px; font-size: 14px; }}
+th {{ background-color: #f4f4f4; }}
+.ok {{ color: green; font-weight: bold; }}
+.falta {{ color: red; font-weight: bold; }}
+@media print {{ .nao-imprimir {{ display: none; }} }}
+</style></head><body>
+<h2>Relatório de Comparação de Débitos: A1 x A2</h2>
+<p>Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
+<table><thead><tr>
+<th style="width:10%;">Linha A1</th><th style="width:70%;">Registro</th><th style="width:20%;">Situação</th>
+</tr></thead><tbody>{linhas}</tbody></table>
+<p><b>Débitos no A1:</b> {total} | <b>Débitos faltando no A2:</b> {faltando}</p>
+<div class="nao-imprimir" style="text-align:center;margin-top:30px;">
+<button onclick="window.print();" style="padding:10px 20px;font-size:16px;cursor:pointer;background:#007BFF;color:#fff;border:none;border-radius:5px;">Imprimir Relatório</button>
+</div></body></html>"""
 
-    input("\nPressione ENTER para voltar...")
+    os.makedirs(PASTA_REG, exist_ok=True)
+    caminho = os.path.join(PASTA_REG, "relatorio_debitos.html")
+    with open(caminho, "w", encoding="utf-8") as f:
+        f.write(html)
+    webbrowser.open("file:///" + os.path.abspath(caminho).replace("\\", "/"))
 
-# MENU
 
-def menu():
-    inicializar_arquivos()
-    while True:
-        limpar_tela()
-        menu_itens = [
-            ("[A]", "Abrir lista completa do destino"),
-            ("[B]", "Buscar no arquivo principal"),
-            ("[BL]", "Buscar na lista de destino"),
-            ("[D]", "Comparar débitos A1 x A2"),
-            ("[I]", "Imprimir relatório de débitos"),
-            ("[P]", "Exportar para No/N.txt"),
-            ("[S]", "Sair"),
-        ]
-        menu_texto = "\n".join(
-            f"[bold cyan]{codigo}[/bold cyan]   [bold]{descricao}[/bold]"
-            if codigo != "[S]"
-            else f"[bold red]{codigo}[/bold red]   [bold]{descricao}[/bold]"
-            for codigo, descricao in menu_itens
-        )
-        menu_panel = Panel(
-            Align.center(menu_texto),
-            title="[bold cyan]SISTEMA DE BUSCA E ORDENAÇÃO[/bold cyan]",
-            title_align="center",
-            border_style="cyan",
-            padding=(1, 3),
-            expand=False,
-            box=ROUNDED,
-        )
-        console.print(menu_panel)
-        opcao = input(
-            "\nEscolha uma opção: "
-        ).strip()
-        opcao_up = opcao.upper()
 
-        if opcao_up == "S": # SAIR
-            break
-        
-        elif opcao_up == "A": # ABRIR A2
-            exibir_tabela_a2()
-        elif opcao_up == "D":
-            comparar_debitos_a1_a2()
-        
-        elif opcao_up in ( # BUSCAR
-            "B",
-            "BL"
-        ):
-            if opcao_up == "B":
-                termo = input(
-                    "Digite o termo para buscar em a1.txt: "
-                ).strip()
-                if termo:
-                    encontrados = [
-                        linha
-                        for linha in carregar_origem_numerada()
-                        if termo.lower()
-                        in linha[1].lower()
-                    ]
-                    if encontrados:
-                        limpar_tela()
-                        table = criar_tabela_padrao(
-                            "RESULTADOS EM A1.TXT"
-                        )
-                        table.add_column(
-                            "Linha",
-                            style="bold yellow",
-                            justify="center",
-                            width=12,
-                            min_width=12,
-                            no_wrap=True,
-                        )
-                        table.add_column(
-                            "Registro",
-                            style="bold white",
-                            overflow="fold",
-                            no_wrap=False,
-                        )
-                        for numero, texto in encontrados:
-                            table.add_row(
-                                str(numero),
-                                texto
-                            )
-                        console.print(
-                            table
-                        )
-                    else:
-                        limpar_tela()
-                        console.print(
-                            "[yellow]Nenhum registro encontrado.[/yellow]"
-                        )
-                    input(
-                        "\nPressione ENTER para voltar..."
-                    )
-            else:
-                termo = input(
-                    "Digite o termo para buscar em a2.txt: "
-                ).strip()
-                if termo:
-                    encontrados = [
-                        linha
-                        for linha in carregar_linhas(
-                            ARQUIVO_DESTINO
-                        )
-                        if termo.lower()
-                        in linha.lower()
-                    ]
-                    limpar_tela()
-                    table = criar_tabela_padrao(
-                        "RESULTADOS EM A2.TXT"
-                    )
-                    table.add_column(
-                        "Linha",
-                        style="bold yellow",
-                        justify="center",
-                        width=12,
-                        min_width=12,
-                        no_wrap=True,
-                    )
-                    table.add_column(
-                        "Registro",
-                        style="bold white",
-                        overflow="fold",
-                        no_wrap=False,
-                    )
-                    for item in encontrados:
-                        numero = extrair_numero(item)
-                        texto = extrair_texto_registro(item)
-                        table.add_row(
-                            str(numero),
-                            texto,
-                        )
-                    console.print(
-                        table
-                    )
-                    input(
-                        "\nPressione ENTER para voltar..."
-                    )
-        elif opcao_up == "I":
-            imprimir_debitos_a1_a2()
-        # EXPORTAR
-        elif opcao_up == "P":
-            linhas_ordenadas = (
-                obter_destino_ordenado()
-            )
-            caminho_n = os.path.join(
-                PASTA_REG,
-                "N.txt"
-            )
-            salvar_linhas(
-                caminho_n,
-                linhas_ordenadas
-            )
-            try:
-                os.startfile(
-                    caminho_n
-                )
-                print(
-                    "Arquivo gerado e aberto!"
-                )
-            except AttributeError:
-                print(
-                    f"Arquivo gerado em: "
-                    f"{caminho_n}"
-                )
-            input(
-                "\nPressione ENTER para voltar..."
-            )
-        
-        # DIGITA DIRETAMENTE
+# INTERFACE
+
+FONTE = "Segoe UI"
+
+
+def estilizar_tabelas(modo, acento):
+    st = ttk.Style()
+    st.theme_use("clam")
+    st.configure("Treeview", background=cm("painel", modo),
+                 fieldbackground=cm("painel", modo), foreground=cm("texto", modo),
+                 rowheight=38, borderwidth=0, font=(FONTE, 12))
+    st.configure("Treeview.Heading", background=cm("bg", modo),
+                 foreground=cm("cabecalho", modo), relief="flat", borderwidth=0,
+                 padding=(8, 10), font=(FONTE, 11, "bold"))
+    st.map("Treeview", background=[("selected", acento)],
+           foreground=[("selected", "#ffffff")])
+    st.map("Treeview.Heading", background=[("active", cm("bg", modo))])
+    st.layout("Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
+
+
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.modo, self.acento = carregar_config()
+        ctk.set_appearance_mode("dark" if self.modo == "Escuro" else "light")
+        self.primarios = []  # botões que usam a cor de destaque
+        self.resultados = []
+
+        self.title("Sistema de Busca e Ordenação")
+        self.geometry("1100x720")
+        self.minsize(900, 540)
+        self.configure(fg_color=c("bg"))
+
+        self._montar_cabecalho()
+
+        self.status = tk.StringVar(value="Pronto.")
+        ctk.CTkLabel(self, textvariable=self.status, anchor="w", text_color=c("cinza"),
+                     font=(FONTE, 12)).pack(side="bottom", fill="x", padx=18, pady=(0, 10))
+
+        self.abas = ctk.CTkTabview(
+            self, corner_radius=14, fg_color=c("painel"),
+            segmented_button_fg_color=c("campo"),
+            segmented_button_unselected_color=c("campo"),
+            segmented_button_unselected_hover_color=c("campo_hover"),
+            text_color=("#111827", "#ffffff"),
+            command=self.atualizar_tudo)
+        self.abas.pack(fill="both", expand=True, padx=16, pady=(12, 6))
+        try:  # abas maiores
+            self.abas._segmented_button.configure(height=42, font=(FONTE, 14, "bold"))
+        except Exception:
+            pass
+        self.aba_busca = self.abas.add("Buscar no A1")
+        self.aba_a2 = self.abas.add("Lista A2")
+        self.aba_deb = self.abas.add("Débitos A1 x A2")
+
+        self._montar_aba_busca()
+        self._montar_aba_a2()
+        self._montar_aba_debitos()
+        self.aplicar_tema()
+        self.atualizar_tudo()
+
+    #  componentes reutilizáveis 
+    def botao(self, pai, texto, comando, primario=False, perigo=False, largura=170):
+        if perigo:
+            kw = dict(fg_color=c("perigo"), hover_color=c("perigo_hover"),
+                      text_color=c("vermelho"))
+        elif primario:
+            kw = dict(fg_color=ACENTOS[self.acento][0],
+                      hover_color=ACENTOS[self.acento][1], text_color="#ffffff")
         else:
-            if opcao:
-                resultado = (
-                    adicionar_itens_por_termo(
-                        opcao
-                    )
-                )
-                if resultado == 0:
-                    limpar_tela()
-                    console.print(
-                        "[yellow]Termo não encontrado "
-                        "em a1.txt ou já adicionado.[/yellow]"
-                    )
-                    input(
-                        "\nPressione ENTER para continuar..."
-                    )
+            kw = dict(fg_color=c("campo"), hover_color=c("campo_hover"),
+                      text_color=c("texto"))
+        b = ctk.CTkButton(pai, text=texto, command=comando, width=largura, height=46,
+                          corner_radius=10, font=(FONTE, 14, "bold"), **kw)
+        if primario:
+            self.primarios.append(b)
+        return b
+
+    def campo(self, pai, var, placeholder, largura=380):
+        return ctk.CTkEntry(pai, textvariable=var, height=46, width=largura,
+                            corner_radius=10, border_width=0, fg_color=c("campo"),
+                            text_color=c("texto"), placeholder_text=placeholder,
+                            placeholder_text_color=c("cinza"), font=(FONTE, 14))
+
+    @staticmethod
+    def _tabela(pai, colunas, larguras):
+        frame = ctk.CTkFrame(pai, fg_color="transparent", corner_radius=0)
+        tree = ttk.Treeview(frame, columns=[c_[0] for c_ in colunas],
+                            show="headings", selectmode="extended")
+        for (cid, titulo), larg in zip(colunas, larguras):
+            alin = "w" if cid == "texto" else "center"
+            tree.heading(cid, text=titulo, anchor=alin)
+            tree.column(cid, width=larg or 300, stretch=(larg == 0), anchor=alin)
+        sb = ctk.CTkScrollbar(frame, command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
+        tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y", padx=(4, 0))
+        return frame, tree
+
+    #  cabeçalho com seletor de tema 
+    def _montar_cabecalho(self):
+        cab = ctk.CTkFrame(self, fg_color="transparent")
+        cab.pack(fill="x", padx=20, pady=(16, 0))
+        ctk.CTkLabel(cab, text="Busca e Ordenação", text_color=c("texto"),
+                     font=(FONTE, 24, "bold")).pack(side="left")
+
+        self.opt_acento = ctk.CTkOptionMenu(
+            cab, values=list(ACENTOS), command=self.mudar_acento, width=140, height=42,
+            corner_radius=10, font=(FONTE, 14), dropdown_font=(FONTE, 14),
+            fg_color=c("campo"), button_color=c("campo_hover"),
+            button_hover_color=c("campo_hover"), text_color=c("texto"),
+            dropdown_fg_color=c("painel"), dropdown_text_color=c("texto"),
+            dropdown_hover_color=c("campo"))
+        self.opt_acento.set(self.acento)
+        self.opt_acento.pack(side="right")
+        ctk.CTkLabel(cab, text="Cor:", text_color=c("cinza"),
+                     font=(FONTE, 13)).pack(side="right", padx=(18, 6))
+
+        self.seg_tema = ctk.CTkSegmentedButton(
+            cab, values=["Escuro", "Claro"], command=self.mudar_tema, height=42,
+            corner_radius=10, font=(FONTE, 14, "bold"), fg_color=c("campo"),
+            unselected_color=c("campo"), unselected_hover_color=c("campo_hover"),
+            text_color=("#111827", "#ffffff"))
+        self.seg_tema.set(self.modo)
+        self.seg_tema.pack(side="right")
+        ctk.CTkLabel(cab, text="Tema:", text_color=c("cinza"),
+                     font=(FONTE, 13)).pack(side="right", padx=(18, 6))
+
+    def mudar_tema(self, modo):
+        self.modo = modo
+        ctk.set_appearance_mode("dark" if modo == "Escuro" else "light")
+        self.aplicar_tema()
+        salvar_config(self.modo, self.acento)
+        self.status.set(f"Tema {modo.lower()} aplicado.")
+
+    def mudar_acento(self, acento):
+        self.acento = acento
+        self.aplicar_tema()
+        salvar_config(self.modo, self.acento)
+        self.status.set(f"Cor de destaque: {acento}.")
+
+    def aplicar_tema(self):
+        normal, hover = ACENTOS[self.acento]
+        # widgets CustomTkinter com cor de destaque
+        for b in self.primarios:
+            b.configure(fg_color=normal, hover_color=hover)
+        self.abas.configure(segmented_button_selected_color=normal,
+                            segmented_button_selected_hover_color=hover)
+        self.seg_tema.configure(selected_color=normal, selected_hover_color=hover)
+        # tabelas (ttk) precisam ser reestilizadas
+        estilizar_tabelas(self.modo, normal)
+        self.tree_busca.tag_configure("ja", foreground=cm("cinza", self.modo))
+        self.tree_busca.tag_configure("novo", foreground=cm("texto", self.modo))
+        self.tree_deb.tag_configure("falta", foreground=cm("vermelho", self.modo))
+        self.tree_deb.tag_configure("ok", foreground=cm("verde", self.modo))
+
+    #  aba 1: buscar no A1 
+    def _montar_aba_busca(self):
+        topo = ctk.CTkFrame(self.aba_busca, fg_color="transparent")
+        topo.pack(fill="x", pady=(6, 12))
+        self.busca_var = tk.StringVar()
+        entrada = self.campo(topo, self.busca_var, "Digite o termo e pressione Enter...")
+        entrada.pack(side="left")
+        entrada.bind("<Return>", lambda e: self.buscar_a1())
+        entrada.focus_set()
+        self.botao(topo, "Buscar", self.buscar_a1, primario=True, largura=130).pack(side="left", padx=10)
+        self.botao(topo, "Adicionar ao A2", self.adicionar_selecionados,
+                   primario=True, largura=200).pack(side="right")
+
+        frame, self.tree_busca = self._tabela(
+            self.aba_busca, [("linha", "Linha"), ("texto", "Registro"), ("situacao", "Situação")],
+            [90, 0, 130])
+        frame.pack(fill="both", expand=True)
+        self.tree_busca.bind("<Double-1>", lambda e: self.adicionar_selecionados())
+        ctk.CTkLabel(self.aba_busca, text="Duplo clique adiciona ao A2  •  Ctrl/Shift seleciona vários",
+                     text_color=c("cinza"), font=(FONTE, 12)).pack(anchor="w", pady=(8, 0))
+
+    def buscar_a1(self):
+        termo = self.busca_var.get().strip().lower()
+        self.tree_busca.delete(*self.tree_busca.get_children())
+        self.resultados = []
+        if not termo:
+            self.status.set("Digite um termo para buscar.")
+            return
+        destino = set(carregar_linhas(ARQUIVO_DESTINO))
+        self.resultados = [(n, t) for n, t in carregar_origem_numerada() if termo in t.lower()]
+        for i, (n, t) in enumerate(self.resultados):
+            ja = f"[{n}] {t}" in destino
+            self.tree_busca.insert("", "end", iid=str(i),
+                                   values=(n, t, "✓ no A2" if ja else ""),
+                                   tags=("ja" if ja else "novo",))
+        self.status.set(f"{len(self.resultados)} resultado(s) para '{termo}'.")
+
+    def adicionar_selecionados(self):
+        sel = self.tree_busca.selection()
+        if not sel:
+            self.status.set("Selecione um ou mais registros para adicionar.")
+            return
+        destino = carregar_linhas(ARQUIVO_DESTINO)
+        adicionados = 0
+        for iid in sel:
+            numero, texto = self.resultados[int(iid)]
+            item = f"[{numero}] {texto}"
+            if item not in destino:
+                destino.append(item)
+                adicionados += 1
+        destino.sort(key=extrair_numero)
+        salvar_linhas(ARQUIVO_DESTINO, destino)
+        self.buscar_a1()
+        self.atualizar_a2()
+        self.status.set(f"✓ {adicionados} registro(s) adicionado(s) ao A2.")
+
+    #  aba 2: lista A2 
+    def _montar_aba_a2(self):
+        topo = ctk.CTkFrame(self.aba_a2, fg_color="transparent")
+        topo.pack(fill="x", pady=(6, 12))
+        self.filtro_a2 = tk.StringVar()
+        self.filtro_a2.trace_add("write", lambda *a: self.atualizar_a2())
+        self.campo(topo, self.filtro_a2, "Filtrar lista...").pack(side="left")
+        self.botao(topo, "Exportar N.txt", self.exportar, largura=170).pack(side="right")
+        self.botao(topo, "Remover", self.remover_a2, perigo=True, largura=140).pack(side="right", padx=10)
+
+        frame, self.tree_a2 = self._tabela(
+            self.aba_a2, [("linha", "Linha"), ("texto", "Registro")], [90, 0])
+        frame.pack(fill="both", expand=True)
+
+    def atualizar_a2(self):
+        self.tree_a2.delete(*self.tree_a2.get_children())
+        filtro = self.filtro_a2.get().strip().lower()
+        total = 0
+        for item in obter_destino_ordenado():
+            texto = extrair_texto_registro(item)
+            if filtro and filtro not in texto.lower():
+                continue
+            self.tree_a2.insert("", "end", iid=item, values=(extrair_numero(item), texto))
+            total += 1
+        self.status.set(f"A2: {total} registro(s) exibido(s).")
+
+    def remover_a2(self):
+        sel = self.tree_a2.selection()
+        if not sel:
+            self.status.set("Selecione registros do A2 para remover.")
+            return
+        if not messagebox.askyesno("Remover", f"Remover {len(sel)} registro(s) do A2?"):
+            return
+        restantes = [l for l in carregar_linhas(ARQUIVO_DESTINO) if l not in sel]
+        salvar_linhas(ARQUIVO_DESTINO, restantes)
+        self.atualizar_a2()
+        self.status.set(f"{len(sel)} registro(s) removido(s).")
+
+    def exportar(self):
+        os.makedirs(PASTA_REG, exist_ok=True)
+        caminho = os.path.join(PASTA_REG, "N.txt")
+        salvar_linhas(caminho, obter_destino_ordenado())
+        self.status.set(f"✓ Exportado para {os.path.abspath(caminho)}")
+
+    #  aba 3: débitos 
+    def _card(self, pai, titulo, var, cor):
+        card = ctk.CTkFrame(pai, fg_color=c("campo"), corner_radius=12)
+        card.pack(side="left", padx=(0, 12))
+        ctk.CTkLabel(card, text=titulo, text_color=c("cinza"),
+                     font=(FONTE, 12)).pack(anchor="w", padx=18, pady=(10, 0))
+        ctk.CTkLabel(card, textvariable=var, text_color=cor,
+                     font=(FONTE, 26, "bold")).pack(anchor="w", padx=18, pady=(0, 10))
+
+    def _montar_aba_debitos(self):
+        topo = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
+        topo.pack(fill="x", pady=(6, 12))
+        self.var_total = tk.StringVar(value="0")
+        self.var_falta = tk.StringVar(value="0")
+        self._card(topo, "Débitos no A1", self.var_total, c("texto"))
+        self._card(topo, "Faltando no A2", self.var_falta, c("vermelho"))
+        self.botao(topo, "Imprimir relatório", gerar_relatorio_html,
+                   primario=True, largura=200).pack(side="right")
+        self.botao(topo, "Atualizar", self.atualizar_debitos, largura=140).pack(side="right", padx=10)
+
+        frame, self.tree_deb = self._tabela(
+            self.aba_deb, [("linha", "Linha A1"), ("texto", "Registro"), ("situacao", "Situação")],
+            [100, 0, 150])
+        frame.pack(fill="both", expand=True)
+
+    def atualizar_debitos(self):
+        self.tree_deb.delete(*self.tree_deb.get_children())
+        resultado, total, faltando = calcular_debitos()
+        for numero, texto, ok in resultado:
+            self.tree_deb.insert("", "end",
+                                 values=(numero, texto, "OK" if ok else "FALTA NO A2"),
+                                 tags=("ok" if ok else "falta",))
+        self.var_total.set(str(total))
+        self.var_falta.set(str(faltando))
+
+    def atualizar_tudo(self):
+        self.atualizar_a2()
+        self.atualizar_debitos()
 
 
 if __name__ == "__main__":
-    menu()
+    inicializar_arquivos()
+    App().mainloop()
