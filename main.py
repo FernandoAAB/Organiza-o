@@ -26,6 +26,7 @@ TEMAS = {
     "cabecalho": ("#4b5563", "#9ca3af"),
     "verde": ("#15803d", "#4ade80"),
     "vermelho": ("#dc2626", "#f87171"),
+    "marcado": ("#fef08a", "#4a3f0f"),
     "perigo": ("#fde2e4", "#3a1d22"),
     "perigo_hover": ("#fbcfd4", "#5a2530"),
 }
@@ -150,6 +151,25 @@ def obter_destino_ordenado():
 def extrair_valor_debito(texto):
     encontrados = re.findall(r"(\d[\d\.,]*)\s*D\b", texto.strip().upper())
     return encontrados[0] if encontrados else None
+
+
+def corresponde(termo, texto):
+    """Busca normal + busca numérica tolerante.
+
+    1453,30 / 1.453,30 / 145330 encontram qualquer valor 1.453,30.
+    """
+    t = termo.strip().lower()
+    if not t:
+        return True
+    if t in texto.lower():
+        return True
+    if re.fullmatch(r"[\d\.,\s]+", t):
+        digitos = re.sub(r"\D", "", t)
+        if digitos:
+            for token in re.findall(r"\d[\d\.,]*", texto):
+                if digitos in re.sub(r"\D", "", token):
+                    return True
+    return False
 
 
 def calcular_debitos():
@@ -369,6 +389,7 @@ class App(ctk.CTk):
         self.tree_busca.tag_configure("novo", foreground=cm("texto", self.modo))
         self.tree_deb.tag_configure("falta", foreground=cm("vermelho", self.modo))
         self.tree_deb.tag_configure("ok", foreground=cm("verde", self.modo))
+        self.tree_deb.tag_configure("marcado", background=cm("marcado", self.modo))
 
     #  aba 1: buscar no A1 
     def _montar_aba_busca(self):
@@ -399,7 +420,7 @@ class App(ctk.CTk):
             self.status.set("Digite um termo para buscar.")
             return
         destino = set(carregar_linhas(ARQUIVO_DESTINO))
-        self.resultados = [(n, t) for n, t in carregar_origem_numerada() if termo in t.lower()]
+        self.resultados = [(n, t) for n, t in carregar_origem_numerada() if corresponde(termo, t)]
         for i, (n, t) in enumerate(self.resultados):
             ja = f"[{n}] {t}" in destino
             self.tree_busca.insert("", "end", iid=str(i),
@@ -446,7 +467,7 @@ class App(ctk.CTk):
         total = 0
         for item in obter_destino_ordenado():
             texto = extrair_texto_registro(item)
-            if filtro and filtro not in texto.lower():
+            if filtro and not corresponde(filtro, texto):
                 continue
             self.tree_a2.insert("", "end", iid=item, values=(extrair_numero(item), texto))
             total += 1
@@ -490,6 +511,18 @@ class App(ctk.CTk):
                    primario=True, largura=200).pack(side="right")
         self.botao(topo, "Atualizar", self.atualizar_debitos, largura=140).pack(side="right", padx=10)
 
+        # barra de pesquisa: ocupa o espaço entre os cartões e o botão Atualizar
+        self.filtro_deb = tk.StringVar()
+        self.filtro_deb.trace_add("write", lambda *a: self.atualizar_debitos())
+        entrada_deb = self.campo(topo, self.filtro_deb, "Pesquisar (Enter = próximo)...",
+                                 largura=200)
+        entrada_deb.pack(side="left", fill="x", expand=True, padx=(8, 0))
+        entrada_deb.bind("<Return>", lambda e: self.proximo_marcado())
+        self.marcados_deb = []
+        self.pos_marcado = -1
+        self.botao(topo, "✕", lambda: self.filtro_deb.set(""),
+                   largura=46).pack(side="left", padx=(6, 10))
+
         frame, self.tree_deb = self._tabela(
             self.aba_deb, [("linha", "Linha A1"), ("texto", "Registro"), ("situacao", "Situação")],
             [100, 0, 150])
@@ -498,12 +531,33 @@ class App(ctk.CTk):
     def atualizar_debitos(self):
         self.tree_deb.delete(*self.tree_deb.get_children())
         resultado, total, faltando = calcular_debitos()
-        for numero, texto, ok in resultado:
-            self.tree_deb.insert("", "end",
-                                 values=(numero, texto, "OK" if ok else "FALTA NO A2"),
-                                 tags=("ok" if ok else "falta",))
+        filtro = self.filtro_deb.get().strip().lower()
+        self.marcados_deb = []
+        self.pos_marcado = -1
+        for i, (numero, texto, ok) in enumerate(resultado):
+            situacao = "OK" if ok else "FALTA NO A2"
+            tags = ["ok" if ok else "falta"]
+            if filtro and (corresponde(filtro, texto) or filtro in situacao.lower()):
+                tags.append("marcado")
+                self.marcados_deb.append(str(i))
+            self.tree_deb.insert("", "end", iid=str(i),
+                                 values=(numero, texto, situacao), tags=tuple(tags))
         self.var_total.set(str(total))
         self.var_falta.set(str(faltando))
+        if filtro:
+            if self.marcados_deb:
+                self.tree_deb.see(self.marcados_deb[0])
+            self.status.set(f"{len(self.marcados_deb)} marcado(s) em {total} débito(s). "
+                            "Enter vai para o próximo.")
+
+    def proximo_marcado(self):
+        if not self.marcados_deb:
+            return
+        self.pos_marcado = (self.pos_marcado + 1) % len(self.marcados_deb)
+        iid = self.marcados_deb[self.pos_marcado]
+        self.tree_deb.see(iid)
+        self.tree_deb.selection_set(iid)
+        self.status.set(f"Marcado {self.pos_marcado + 1} de {len(self.marcados_deb)}.")
 
     def atualizar_tudo(self):
         self.atualizar_a2()
