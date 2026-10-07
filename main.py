@@ -17,26 +17,29 @@ CONFIG = os.path.join(PASTA_REG, "config.json")
 # TEMAS  (cada cor: (claro, escuro))
 
 TEMAS = {
-    "bg": ("#eef0f4", "#14151a"),
-    "painel": ("#ffffff", "#1c1e26"),
-    "campo": ("#e5e7eb", "#2a2d38"),
-    "campo_hover": ("#d1d5db", "#353948"),
-    "texto": ("#111827", "#e5e7eb"),
-    "cinza": ("#6b7280", "#6b7280"),
-    "cabecalho": ("#4b5563", "#9ca3af"),
-    "verde": ("#15803d", "#4ade80"),
-    "vermelho": ("#dc2626", "#f87171"),
-    "marcado": ("#fef08a", "#4a3f0f"),
-    "perigo": ("#fde2e4", "#3a1d22"),
-    "perigo_hover": ("#fbcfd4", "#5a2530"),
+    "bg": ("#f1f5f9", "#0f172a"),
+    "painel": ("#ffffff", "#1e293b"),
+    "campo": ("#e2e8f0", "#334155"),
+    "campo_hover": ("#cbd5e1", "#475569"),
+    "texto": ("#0f172a", "#f8fafc"),
+    "cinza": ("#64748b", "#94a3b8"),
+    "cabecalho": ("#475569", "#cbd5e1"),
+    "verde": ("#16a34a", "#4ade80"),
+    "vermelho": ("#e11d48", "#fb7185"),
+    "marcado": ("#fef08a", "#3b2d54"),
+    "perigo": ("#ffe4e6", "#4c1d24"),
+    "perigo_hover": ("#fecdd3", "#6b2129"),
 }
+
 ACENTOS = {  # (normal, hover)
-    "Azul": ("#3b82f6", "#2563eb"),
-    "Verde": ("#22c55e", "#16a34a"),
-    "Roxo": ("#8b5cf6", "#7c3aed"),
+    "Índigo": ("#6366f1", "#4f46e5"),
+    "Ciano": ("#06b6d4", "#0891b2"),
+    "Violeta": ("#8b5cf6", "#7c3aed"),
+    "Esmeralda": ("#10b981", "#059669"),
     "Laranja": ("#f97316", "#ea580c"),
-    "Rosa": ("#ec4899", "#db2777"),
+    "Azul": ("#3b82f6", "#2563eb"),
 }
+
 
 
 def c(chave):
