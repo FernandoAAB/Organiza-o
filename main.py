@@ -3,7 +3,12 @@ import os
 import re
 import webbrowser
 import tkinter as tk
+from collections import Counter
 from datetime import datetime
+from decimal import Decimal
+from html import escape
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from tkinter import ttk, messagebox
 
 import customtkinter as ctk  # pip install customtkinter
@@ -56,10 +61,12 @@ def carregar_config():
     try:
         with open(CONFIG, "r", encoding="utf-8") as f:
             dados = json.load(f)
+        if not isinstance(dados, dict):
+            return "Escuro", "Azul"
         modo = dados.get("tema", "Escuro")
         acento = dados.get("acento", "Azul")
         return (modo if modo in ("Escuro", "Claro") else "Escuro",
-                acento if acento in ACENTOS else "Azul")
+                acento if isinstance(acento, str) and acento in ACENTOS else "Azul")
     except (OSError, ValueError):
         return "Escuro", "Azul"
 
@@ -124,9 +131,21 @@ def carregar_origem_numerada():
 
 
 def salvar_linhas(nome_arquivo, linhas):
-    with open(nome_arquivo, "w", encoding="utf-8") as f:
-        for linha in linhas:
-            f.write(linha + "\n")
+    """Substitui o arquivo somente depois de gravar todo o conteúdo."""
+    caminho = Path(nome_arquivo).absolute()
+    temporario = None
+    try:
+        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=caminho.parent,
+                                delete=False) as f:
+            temporario = Path(f.name)
+            for linha in linhas:
+                f.write(linha + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporario, caminho)
+    finally:
+        if temporario is not None:
+            temporario.unlink(missing_ok=True)
 
 
 def extrair_numero(linha):
@@ -151,9 +170,22 @@ def obter_destino_ordenado():
     return sorted(carregar_linhas(ARQUIVO_DESTINO), key=extrair_numero)
 
 
+def extrair_lancamento(texto):
+    """Retorna (D/C, valor) do primeiro lançamento em formato brasileiro."""
+    encontrado = re.search(
+        r"(?<![0-9.,+\-])([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]+)"
+        r"(,[0-9]{1,2})?\s*([DC])\b", texto.strip().upper()
+    )
+    if encontrado is None:
+        return None
+    inteiro, centavos, tipo = encontrado.groups()
+    valor = Decimal(inteiro.replace(".", "") + (centavos or "").replace(",", "."))
+    return tipo, valor
+
+
 def extrair_valor_debito(texto):
-    encontrados = re.findall(r"(\d[\d\.,]*)\s*D\b", texto.strip().upper())
-    return encontrados[0] if encontrados else None
+    lancamento = extrair_lancamento(texto)
+    return lancamento[1] if lancamento is not None and lancamento[0] == "D" else None
 
 
 def corresponde(termo, texto):
@@ -175,40 +207,62 @@ def corresponde(termo, texto):
     return False
 
 
-def calcular_debitos():
-    """Retorna (lista[(numero, texto, ok)], total, faltando)."""
-    debitos_a2 = set()
-    for item in carregar_linhas(ARQUIVO_DESTINO):
-        valor = extrair_valor_debito(extrair_texto_registro(item))
+def calcular_lancamentos(tipo=None, termo=""):
+    """Compara por (D/C, valor), preservando a referência e as ocorrências."""
+    lancamentos_a2 = Counter()
+    itens_a2 = Counter(carregar_linhas(ARQUIVO_DESTINO))
+    origem = [(numero, texto, extrair_lancamento(texto))
+              for numero, texto in carregar_origem_numerada()]
+    origem = [(numero, texto, valor) for numero, texto, valor in origem
+              if valor is not None and (tipo is None or valor[0] == tipo)]
+    # Reserve primeiro os registros enviados diretamente do A1. Um valor igual
+    # em uma linha anterior não deve consumir a seleção de outra linha.
+    conferidos = set()
+    for numero, texto, valor in origem:
+        item = f"[{numero}] {texto}"
+        if valor is not None and itens_a2[item] > 0:
+            conferidos.add(numero)
+            itens_a2[item] -= 1
+    for item, quantidade in itens_a2.items():
+        valor = extrair_lancamento(extrair_texto_registro(item))
         if valor is not None:
-            debitos_a2.add(valor)
+            lancamentos_a2[valor] += quantidade
 
-    resultado, faltando = [], 0
-    for numero, texto in carregar_origem_numerada():
-        valor = extrair_valor_debito(texto)
+    resultado = []
+    for numero, texto, valor in origem:
         if valor is None:
             continue
-        ok = valor in debitos_a2
-        if not ok:
-            faltando += 1
+        ok = numero in conferidos or lancamentos_a2[valor] > 0
+        if ok and numero not in conferidos:
+            lancamentos_a2[valor] -= 1
         resultado.append((numero, texto, ok))
-    return resultado, len(resultado), faltando
+    # A busca acontece após a conferência completa, para não redistribuir
+    # ocorrências de mesmo valor quando apenas parte da lista está visível.
+    resultado = [(n, texto, ok) for n, texto, ok in resultado if corresponde(termo, texto)]
+    return resultado, len(resultado), sum(not ok for _, _, ok in resultado)
 
 
-def gerar_relatorio_html():
-    resultado, total, faltando = calcular_debitos()
+def calcular_debitos():
+    return calcular_lancamentos("D")
+
+
+def gerar_relatorio_html(tipo=None, termo=""):
+    resultado, total, faltando = calcular_lancamentos(tipo, termo)
+    categoria = {None: "Débitos e Créditos", "D": "Débitos", "C": "Créditos"}[tipo]
     linhas = ""
-    for numero, texto, ok in resultado:
+    for ordem, (numero, texto, ok) in enumerate(resultado, start=1):
+        natureza = "Débito" if extrair_lancamento(texto)[0] == "D" else "Crédito"
+        texto = escape(texto)
         if ok:
-            linhas += (f'<tr><td style="text-align:center;">{numero}</td><td>{texto}</td>'
-                       f'<td style="text-align:center;"><span class="ok">OK</span></td></tr>')
+            linhas += (f'<tr><td>{ordem}</td><td style="text-align:center;">{numero}</td><td>{texto}</td>'
+                       f'<td>{natureza}</td><td style="text-align:center;"><span class="ok">OK</span></td></tr>')
         else:
-            linhas += (f'<tr style="color:red;font-weight:bold;"><td style="text-align:center;">{numero}</td>'
-                       f'<td>{texto}</td><td style="text-align:center;"><span class="falta">FALTA NO A2</span></td></tr>')
+            linhas += (f'<tr style="color:red;font-weight:bold;"><td>{ordem}</td><td style="text-align:center;">{numero}</td>'
+                       f'<td>{texto}</td><td>{natureza}</td><td style="text-align:center;"><span class="falta">FALTA NO A2</span></td></tr>')
 
     html = f"""<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Comparação de Débitos - A1 x A2</title>
+<title>Comparação de {categoria} - A1 x A2</title>
 <style>
 body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
 h2, p {{ text-align: center; }}
@@ -219,12 +273,13 @@ th {{ background-color: #f4f4f4; }}
 .falta {{ color: red; font-weight: bold; }}
 @media print {{ .nao-imprimir {{ display: none; }} }}
 </style></head><body>
-<h2>Relatório de Comparação de Débitos: A1 x A2</h2>
+<h2>Relatório de Comparação de {categoria}: A1 x A2</h2>
 <p>Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
+<p>Pesquisa: {escape(termo.strip()) or 'Todos os registros'}</p>
 <table><thead><tr>
-<th style="width:10%;">Linha A1</th><th style="width:70%;">Registro</th><th style="width:20%;">Situação</th>
+<th>Nº</th><th>Linha A1</th><th>Registro</th><th>Tipo</th><th>Situação</th>
 </tr></thead><tbody>{linhas}</tbody></table>
-<p><b>Débitos no A1:</b> {total} | <b>Débitos faltando no A2:</b> {faltando}</p>
+<p><b>Lançamentos no A1:</b> {total} | <b>Faltando no A2:</b> {faltando}</p>
 <div class="nao-imprimir" style="text-align:center;margin-top:30px;">
 <button onclick="window.print();" style="padding:10px 20px;font-size:16px;cursor:pointer;background:#007BFF;color:#fff;border:none;border-radius:5px;">Imprimir Relatório</button>
 </div></body></html>"""
@@ -233,7 +288,8 @@ th {{ background-color: #f4f4f4; }}
     caminho = os.path.join(PASTA_REG, "relatorio_debitos.html")
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(html)
-    webbrowser.open("file:///" + os.path.abspath(caminho).replace("\\", "/"))
+    webbrowser.open(Path(caminho).resolve().as_uri())
+    return caminho
 
 
 
@@ -259,15 +315,20 @@ def estilizar_tabelas(modo, acento):
 
 class App(ctk.CTk):
     def __init__(self):
+        # Sem a fonte de formas, o fallback por círculos deixa sobras nas
+        # bordas dos controles. Polígonos dispensam essa fonte e evitam as sobras.
+        if ctk.DrawEngine.preferred_drawing_method == "circle_shapes":
+            ctk.DrawEngine.preferred_drawing_method = "polygon_shapes"
         super().__init__()
         self.modo, self.acento = carregar_config()
         ctk.set_appearance_mode("dark" if self.modo == "Escuro" else "light")
         self.primarios = []  # botões que usam a cor de destaque
         self.resultados = []
+        self._sincronizando_selecao = False
 
         self.title("Sistema de Busca e Ordenação")
-        self.geometry("1100x720")
-        self.minsize(900, 540)
+        self.geometry("1360x820")
+        self.minsize(1100, 650)
         self.configure(fg_color=c("bg"))
 
         self._montar_cabecalho()
@@ -281,16 +342,12 @@ class App(ctk.CTk):
             segmented_button_fg_color=c("campo"),
             segmented_button_unselected_color=c("campo"),
             segmented_button_unselected_hover_color=c("campo_hover"),
+            segmented_button_font=(FONTE, 14, "bold"),
             text_color=("#111827", "#ffffff"),
             command=self.atualizar_tudo)
         self.abas.pack(fill="both", expand=True, padx=16, pady=(12, 6))
-        try:  # abas maiores
-            self.abas._segmented_button.configure(height=42, font=(FONTE, 14, "bold"))
-        except Exception:
-            pass
-        self.aba_busca = self.abas.add("Buscar no A1")
+        self.aba_busca = self.abas.add("Buscar e comparar")
         self.aba_a2 = self.abas.add("Lista A2")
-        self.aba_deb = self.abas.add("Débitos A1 x A2")
 
         self._montar_aba_busca()
         self._montar_aba_a2()
@@ -298,8 +355,16 @@ class App(ctk.CTk):
         self.aplicar_tema()
         self.atualizar_tudo()
 
+    def report_callback_exception(self, exc, valor, traceback):
+        """Apresenta erros de arquivo sem deixar a ação falhar silenciosamente."""
+        if issubclass(exc, (OSError, UnicodeError)):
+            self.status.set("Não foi possível concluir a operação com os arquivos.")
+            messagebox.showerror("Erro ao acessar arquivos", str(valor), parent=self)
+        else:
+            super().report_callback_exception(exc, valor, traceback)
+
     #  componentes reutilizáveis 
-    def botao(self, pai, texto, comando, primario=False, perigo=False, largura=170):
+    def botao(self, pai, texto, comando, primario=False, perigo=False, largura=170, altura=46):
         if perigo:
             kw = dict(fg_color=c("perigo"), hover_color=c("perigo_hover"),
                       text_color=c("vermelho"))
@@ -309,7 +374,7 @@ class App(ctk.CTk):
         else:
             kw = dict(fg_color=c("campo"), hover_color=c("campo_hover"),
                       text_color=c("texto"))
-        b = ctk.CTkButton(pai, text=texto, command=comando, width=largura, height=46,
+        b = ctk.CTkButton(pai, text=texto, command=comando, width=largura, height=altura,
                           corner_radius=10, font=(FONTE, 14, "bold"), **kw)
         if primario:
             self.primarios.append(b)
@@ -330,10 +395,18 @@ class App(ctk.CTk):
             alin = "w" if cid == "texto" else "center"
             tree.heading(cid, text=titulo, anchor=alin)
             tree.column(cid, width=larg or 300, stretch=(larg == 0), anchor=alin)
+        tree.column("texto", minwidth=140)
+        tree.bind("<Configure>", lambda evento: tree.column(
+            "texto", width=max(140, evento.width - 4 - sum(
+                tree.column(cid, "width") for cid in tree["columns"] if cid != "texto"))))
         sb = ctk.CTkScrollbar(frame, command=tree.yview)
-        tree.configure(yscrollcommand=sb.set)
-        tree.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y", padx=(4, 0))
+        horizontal = ctk.CTkScrollbar(frame, orientation="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=sb.set, xscrollcommand=horizontal.set)
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+        tree.grid(row=0, column=0, sticky="nsew")
+        sb.grid(row=0, column=1, sticky="ns", padx=(4, 0))
+        horizontal.grid(row=1, column=0, sticky="ew")
         return frame, tree
 
     #  cabeçalho com seletor de tema 
@@ -392,54 +465,100 @@ class App(ctk.CTk):
         self.tree_busca.tag_configure("novo", foreground=cm("texto", self.modo))
         self.tree_deb.tag_configure("falta", foreground=cm("vermelho", self.modo))
         self.tree_deb.tag_configure("ok", foreground=cm("verde", self.modo))
-        self.tree_deb.tag_configure("marcado", background=cm("marcado", self.modo))
+        self.divisao.configure(bg=cm("bg", self.modo))
 
     #  aba 1: buscar no A1 
     def _montar_aba_busca(self):
         topo = ctk.CTkFrame(self.aba_busca, fg_color="transparent")
         topo.pack(fill="x", pady=(6, 12))
         self.busca_var = tk.StringVar()
-        entrada = self.campo(topo, self.busca_var, "Digite o termo e pressione Enter...")
-        entrada.pack(side="left")
+        entrada = self.campo(topo, self.busca_var, "Buscar nos dois lados: texto, data ou valor...")
+        entrada.pack(side="left", fill="x", expand=True)
         entrada.bind("<Return>", lambda e: self.buscar_a1())
         entrada.focus_set()
         self.botao(topo, "Buscar", self.buscar_a1, primario=True, largura=130).pack(side="left", padx=10)
-        self.botao(topo, "Adicionar ao A2", self.adicionar_selecionados,
+        self.botao(topo, "Mostrar todos", self.mostrar_todos, largura=150).pack(side="left", padx=(0, 10))
+        self.botao(topo, "Adicionar ao A2 →", self.adicionar_e_comparar,
                    primario=True, largura=200).pack(side="right")
 
+        ctk.CTkLabel(self.aba_busca,
+                    text="Pesquise uma vez para conferir os dois lados. Selecione no A1 e adicione ao A2; a situação será atualizada ao lado.",
+                    text_color=c("cinza"), font=(FONTE, 13)).pack(anchor="w", pady=(0, 6))
+        self.divisao = tk.PanedWindow(self.aba_busca, orient="horizontal", sashwidth=10,
+                                     bd=0, bg=cm("bg", self.modo), opaqueresize=True)
+        self.divisao.pack(fill="both", expand=True)
+        self.painel_busca = ctk.CTkFrame(self.divisao, bg_color=c("bg"), fg_color=c("painel"), corner_radius=8)
+        self.aba_deb = ctk.CTkFrame(self.divisao, bg_color=c("bg"), fg_color=c("painel"), corner_radius=8)
+        self.divisao.add(self.painel_busca, minsize=380, stretch="always", width=600)
+        self.divisao.add(self.aba_deb, minsize=440, stretch="always")
+        self._divisao_posicionada = False
+        self.divisao.bind("<Map>", self.posicionar_divisao)
+        ctk.CTkLabel(self.painel_busca, text="A1 — registros de origem",
+                    font=(FONTE, 18, "bold"), text_color=c("texto")).pack(anchor="w", padx=8, pady=(10, 4))
+        ctk.CTkLabel(self.painel_busca, text="Duplo clique adiciona ao A2 • Ctrl/Shift seleciona vários",
+                    text_color=c("cinza"), font=(FONTE, 12)).pack(anchor="w", padx=8, pady=(0, 10))
+
         frame, self.tree_busca = self._tabela(
-            self.aba_busca, [("linha", "Linha"), ("texto", "Registro"), ("situacao", "Situação")],
-            [90, 0, 130])
+            self.painel_busca, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro"), ("situacao", "No A2")],
+            [40, 85, 0, 80])
         frame.pack(fill="both", expand=True)
-        self.tree_busca.bind("<Double-1>", lambda e: self.adicionar_selecionados())
-        ctk.CTkLabel(self.aba_busca, text="Duplo clique adiciona ao A2  •  Ctrl/Shift seleciona vários",
-                     text_color=c("cinza"), font=(FONTE, 12)).pack(anchor="w", pady=(8, 0))
+        self.tree_busca.bind("<Double-1>", lambda e: self.adicionar_e_comparar())
+        self.tree_busca.bind("<<TreeviewSelect>>", lambda e: self.sincronizar_selecao(self.tree_busca, self.tree_deb))
+
+    def posicionar_divisao(self, evento):
+        if not self._divisao_posicionada:
+            self._divisao_posicionada = True
+            self.after_idle(lambda: self.divisao.sash_place(0, int(self.divisao.winfo_width() * 0.45), 0))
 
     def buscar_a1(self):
         termo = self.busca_var.get().strip().lower()
         self.tree_busca.delete(*self.tree_busca.get_children())
         self.resultados = []
-        if not termo:
-            self.status.set("Digite um termo para buscar.")
-            return
         destino = set(carregar_linhas(ARQUIVO_DESTINO))
         self.resultados = [(n, t) for n, t in carregar_origem_numerada() if corresponde(termo, t)]
         for i, (n, t) in enumerate(self.resultados):
             ja = f"[{n}] {t}" in destino
             self.tree_busca.insert("", "end", iid=str(i),
-                                   values=(n, t, "✓ no A2" if ja else ""),
+                                   values=(i + 1, n, t, "✓ no A2" if ja else ""),
                                    tags=("ja" if ja else "novo",))
-        self.status.set(f"{len(self.resultados)} resultado(s) para '{termo}'.")
+        if termo:
+            self.status.set(f"{len(self.resultados)} resultado(s) para '{termo}'.")
+        else:
+            self.status.set(f"A1: {len(self.resultados)} registro(s) exibido(s).")
+        self.atualizar_debitos()
 
-    def adicionar_selecionados(self):
+    def sincronizar_selecao(self, origem, destino):
+        if self._sincronizando_selecao:
+            return
+        numeros = {origem.set(iid, "linha") for iid in origem.selection()}
+        if not numeros:
+            return
+        selecao = tuple(iid for iid in destino.get_children() if destino.set(iid, "linha") in numeros)
+        if destino.selection() != selecao:
+            self._sincronizando_selecao = True
+            destino.selection_set(*selecao)
+            if selecao:
+                destino.see(selecao[0])
+            self.after_idle(lambda: setattr(self, "_sincronizando_selecao", False))
+
+    def mostrar_todos(self):
+        self.busca_var.set("")
+        self.buscar_a1()
+
+    def adicionar_e_comparar(self):
+        self.adicionar_selecionados(comparar=True)
+
+    def adicionar_selecionados(self, comparar=False):
         sel = self.tree_busca.selection()
         if not sel:
             self.status.set("Selecione um ou mais registros para adicionar.")
             return
         destino = carregar_linhas(ARQUIVO_DESTINO)
         adicionados = 0
+        numeros = set()
         for iid in sel:
             numero, texto = self.resultados[int(iid)]
+            numeros.add(numero)
             item = f"[{numero}] {texto}"
             if item not in destino:
                 destino.append(item)
@@ -447,8 +566,24 @@ class App(ctk.CTk):
         destino.sort(key=extrair_numero)
         salvar_linhas(ARQUIVO_DESTINO, destino)
         self.buscar_a1()
+        self.tree_busca.selection_set(*(iid for iid in self.tree_busca.get_children()
+                                       if int(self.tree_busca.set(iid, "linha")) in numeros))
         self.atualizar_a2()
+        self.atualizar_debitos()
         self.status.set(f"✓ {adicionados} registro(s) adicionado(s) ao A2.")
+        if comparar:
+            self.tipo_comparacao.set("Todos")
+            self.atualizar_debitos()
+            self.abas.set("Buscar e comparar")
+            selecionados = [iid for iid in self.tree_deb.get_children()
+                            if int(self.tree_deb.set(iid, "linha")) in numeros]
+            self.tree_deb.selection_set(*selecionados)
+            if selecionados:
+                self.tree_deb.focus(selecionados[0])
+                self.tree_deb.see(selecionados[0])
+            self.status.set(f"{adicionados} adicionado(s) ao A2; "
+                            f"{len(selecionados)} lançamento(s) selecionado(s) na comparação. "
+                            "Registros sem D/C não entram na comparação.")
 
     #  aba 2: lista A2 
     def _montar_aba_a2(self):
@@ -461,20 +596,23 @@ class App(ctk.CTk):
         self.botao(topo, "Remover", self.remover_a2, perigo=True, largura=140).pack(side="right", padx=10)
 
         frame, self.tree_a2 = self._tabela(
-            self.aba_a2, [("linha", "Linha"), ("texto", "Registro")], [90, 0])
+            self.aba_a2, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro")], [60, 90, 0])
         frame.pack(fill="both", expand=True)
 
     def atualizar_a2(self):
         self.tree_a2.delete(*self.tree_a2.get_children())
         filtro = self.filtro_a2.get().strip().lower()
         total = 0
-        for item in obter_destino_ordenado():
+        self.itens_a2 = obter_destino_ordenado()
+        for indice, item in enumerate(self.itens_a2):
             texto = extrair_texto_registro(item)
             if filtro and not corresponde(filtro, texto):
                 continue
-            self.tree_a2.insert("", "end", iid=item, values=(extrair_numero(item), texto))
             total += 1
-        self.status.set(f"A2: {total} registro(s) exibido(s).")
+            numero = extrair_numero(item) if re.match(r"^\[\d+\]", item) else "—"
+            self.tree_a2.insert("", "end", iid=str(indice), values=(total, numero, texto))
+        if self.abas.get() == "Lista A2":
+            self.status.set(f"A2: {total} registro(s) exibido(s).")
 
     def remover_a2(self):
         sel = self.tree_a2.selection()
@@ -483,9 +621,16 @@ class App(ctk.CTk):
             return
         if not messagebox.askyesno("Remover", f"Remover {len(sel)} registro(s) do A2?"):
             return
-        restantes = [l for l in carregar_linhas(ARQUIVO_DESTINO) if l not in sel]
+        if obter_destino_ordenado() != self.itens_a2:
+            self.atualizar_a2()
+            self.status.set("O A2 foi alterado. Confira a lista e selecione novamente.")
+            return
+        indices = {int(iid) for iid in sel}
+        restantes = [item for i, item in enumerate(self.itens_a2) if i not in indices]
         salvar_linhas(ARQUIVO_DESTINO, restantes)
         self.atualizar_a2()
+        self.atualizar_debitos()
+        self.buscar_a1()
         self.status.set(f"{len(sel)} registro(s) removido(s).")
 
     def exportar(self):
@@ -494,75 +639,66 @@ class App(ctk.CTk):
         salvar_linhas(caminho, obter_destino_ordenado())
         self.status.set(f"✓ Exportado para {os.path.abspath(caminho)}")
 
-    #  aba 3: débitos 
+    #  aba 3: comparação de débitos e créditos
     def _card(self, pai, titulo, var, cor):
-        card = ctk.CTkFrame(pai, fg_color=c("campo"), corner_radius=12)
-        card.pack(side="left", padx=(0, 12))
+        card = ctk.CTkFrame(pai, fg_color=c("campo"), corner_radius=8)
+        card.pack(side="left", padx=(0, 8))
         ctk.CTkLabel(card, text=titulo, text_color=c("cinza"),
-                     font=(FONTE, 12)).pack(anchor="w", padx=18, pady=(10, 0))
+                     font=(FONTE, 12)).pack(side="left", padx=(10, 6), pady=4)
         ctk.CTkLabel(card, textvariable=var, text_color=cor,
-                     font=(FONTE, 26, "bold")).pack(anchor="w", padx=18, pady=(0, 10))
+                     font=(FONTE, 18, "bold")).pack(side="left", padx=(0, 10), pady=4)
 
     def _montar_aba_debitos(self):
+        cabecalho = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
+        cabecalho.pack(fill="x", padx=8, pady=(8, 6))
+        ctk.CTkLabel(cabecalho, text="A1 × A2 — conferência",
+                    font=(FONTE, 18, "bold"), text_color=c("texto")).pack(side="left")
+        self.botao(cabecalho, "Relatório", self.imprimir_relatorio,
+                   largura=100, altura=32).pack(side="right")
+        self.botao(cabecalho, "Atualizar", self.atualizar_tudo,
+                   largura=100, altura=32).pack(side="right", padx=6)
         topo = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
-        topo.pack(fill="x", pady=(6, 12))
+        topo.pack(fill="x", padx=8, pady=(0, 8))
+        self.tipo_comparacao = tk.StringVar(value="Todos")
+        self.tipo_comparacao.trace_add("write", lambda *a: self.atualizar_debitos())
+        ctk.CTkOptionMenu(topo, values=["Todos", "Débitos", "Créditos"],
+                         variable=self.tipo_comparacao, width=120, height=36).pack(side="left", padx=(0, 10))
         self.var_total = tk.StringVar(value="0")
         self.var_falta = tk.StringVar(value="0")
-        self._card(topo, "Débitos no A1", self.var_total, c("texto"))
+        self._card(topo, "Exibidos", self.var_total, c("texto"))
         self._card(topo, "Faltando no A2", self.var_falta, c("vermelho"))
-        self.botao(topo, "Imprimir relatório", gerar_relatorio_html,
-                   primario=True, largura=200).pack(side="right")
-        self.botao(topo, "Atualizar", self.atualizar_debitos, largura=140).pack(side="right", padx=10)
-
-        # barra de pesquisa: ocupa o espaço entre os cartões e o botão Atualizar
-        self.filtro_deb = tk.StringVar()
-        self.filtro_deb.trace_add("write", lambda *a: self.atualizar_debitos())
-        entrada_deb = self.campo(topo, self.filtro_deb, "Pesquisar (Enter = próximo)...",
-                                 largura=200)
-        entrada_deb.pack(side="left", fill="x", expand=True, padx=(8, 0))
-        entrada_deb.bind("<Return>", lambda e: self.proximo_marcado())
-        self.marcados_deb = []
-        self.pos_marcado = -1
-        self.botao(topo, "✕", lambda: self.filtro_deb.set(""),
-                   largura=46).pack(side="left", padx=(6, 10))
 
         frame, self.tree_deb = self._tabela(
-            self.aba_deb, [("linha", "Linha A1"), ("texto", "Registro"), ("situacao", "Situação")],
-            [100, 0, 150])
+            self.aba_deb, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro"),
+                           ("tipo", "Tipo"), ("situacao", "Situação")],
+            [40, 85, 0, 75, 125])
         frame.pack(fill="both", expand=True)
+        self.tree_deb.bind("<<TreeviewSelect>>", lambda e: self.sincronizar_selecao(self.tree_deb, self.tree_busca))
+
+    def tipo_selecionado(self):
+        return {"Todos": None, "Débitos": "D", "Créditos": "C"}[self.tipo_comparacao.get()]
+
+    def imprimir_relatorio(self):
+        caminho = gerar_relatorio_html(self.tipo_selecionado(), self.busca_var.get())
+        self.status.set(f"Relatório salvo em {os.path.abspath(caminho)}")
 
     def atualizar_debitos(self):
         self.tree_deb.delete(*self.tree_deb.get_children())
-        resultado, total, faltando = calcular_debitos()
-        filtro = self.filtro_deb.get().strip().lower()
-        self.marcados_deb = []
-        self.pos_marcado = -1
+        resultado, total, faltando = calcular_lancamentos(self.tipo_selecionado(), self.busca_var.get())
         for i, (numero, texto, ok) in enumerate(resultado):
+            natureza = "Débito" if extrair_lancamento(texto)[0] == "D" else "Crédito"
             situacao = "OK" if ok else "FALTA NO A2"
             tags = ["ok" if ok else "falta"]
-            if filtro and (corresponde(filtro, texto) or filtro in situacao.lower()):
-                tags.append("marcado")
-                self.marcados_deb.append(str(i))
             self.tree_deb.insert("", "end", iid=str(i),
-                                 values=(numero, texto, situacao), tags=tuple(tags))
+                                 values=(i + 1, numero, texto, natureza, situacao), tags=tuple(tags))
         self.var_total.set(str(total))
         self.var_falta.set(str(faltando))
-        if filtro:
-            if self.marcados_deb:
-                self.tree_deb.see(self.marcados_deb[0])
-            self.status.set(f"{len(self.marcados_deb)} marcado(s) em {total} débito(s). "
-                            "Enter vai para o próximo.")
-
-    def proximo_marcado(self):
-        if not self.marcados_deb:
-            return
-        self.pos_marcado = (self.pos_marcado + 1) % len(self.marcados_deb)
-        iid = self.marcados_deb[self.pos_marcado]
-        self.tree_deb.see(iid)
-        self.tree_deb.selection_set(iid)
-        self.status.set(f"Marcado {self.pos_marcado + 1} de {len(self.marcados_deb)}.")
+        self.sincronizar_selecao(self.tree_busca, self.tree_deb)
+        if self.abas.get() == "Buscar e comparar":
+            self.status.set(f"A1: {len(self.resultados)} registro(s) • Comparação: {total} lançamento(s) • Faltando: {faltando}")
 
     def atualizar_tudo(self):
+        self.buscar_a1()
         self.atualizar_a2()
         self.atualizar_debitos()
 
