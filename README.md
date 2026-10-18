@@ -119,13 +119,3 @@ O arquivo de exemplo do commit `5ac63f7` contém 98 registros sem datas explíci
 
 O relatório trata o conteúdo dos registros como texto, inclusive caracteres
 como `<`, `>` e `&`. A impressão depende do navegador e da impressora disponível.
-
-## Testes
-
-```sh
-uv run --frozen python -m unittest discover -s tests -v
-```
-
-Os testes usam arquivos temporários. Os testes da interface exigem uma tela X11
-em Linux (`DISPLAY` configurado); sem ela, são indicados como ignorados. Em um
-ambiente sem monitor, use uma tela virtual para executar também esses testes.
