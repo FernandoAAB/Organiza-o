@@ -801,7 +801,8 @@ class App(ctk.CTk):
         ctk.CTkLabel(rodape, text="Mostrar:", text_color=c("cinza"),
                      font=(FONTE, 12)).pack(side="left", padx=(0, 6))
         ctk.CTkOptionMenu(rodape, values=["Todos", "Débitos", "Créditos"],
-                         variable=self.tipo_comparacao, width=100, height=30,
+                         variable=self.tipo_comparacao, width=120, height=32,
+                         font=(FONTE, 13), dropdown_font=(FONTE, 13),
                          fg_color=c("campo"), button_color=c("campo_hover"),
                          button_hover_color=c("campo_hover"), text_color=c("texto"),
                          dropdown_fg_color=c("painel"), dropdown_text_color=c("texto"),
