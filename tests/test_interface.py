@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import main
@@ -98,33 +99,83 @@ class InterfaceTests(unittest.TestCase):
                     self.assertLessEqual(filho.winfo_x() + filho.winfo_width(), widget.winfo_width())
                 conferir(filho)
 
-        for modo in ("Claro", "Escuro"):
-            self.app.mudar_tema(modo)
-            for tamanho in ("960x560", "1100x650", "1360x820"):
-                self.app.geometry(tamanho)
-                self.app.update()
-                self.assertEqual(self.app.tree_busca.winfo_rooty(), self.app.tree_deb.winfo_rooty())
-                self.assertGreater(self.app.tree_busca.winfo_height(), 100)
-                conferir(self.app)
-                self.app.alternar_aparencia()
-                self.app.update()
-                self.app.abas.set("Lista A2")
-                self.app.update()
-                conferir(self.app)
-                self.app.abas.set("Buscar e comparar")
-                self.app.update()
-                conferir(self.app)
-                self.app.alternar_aparencia()
-                self.app.update()
+        try:
+            for escala in (1, 1.25):
+                main.ctk.set_widget_scaling(escala)
+                main.ctk.set_window_scaling(escala)
+                # CustomTkinter libera min/max um segundo após trocar a escala.
+                self.app.after(1100, self.app.quit)
+                self.app.mainloop()
+                for modo in ("Claro", "Escuro"):
+                    self.app.mudar_tema(modo)
+                    alturas = []
+                    for largura, altura in ((960, 560), (1366, 768), (1600, 900), (1920, 1080)):
+                        with self.subTest(escala=escala, modo=modo, resolucao=(largura, altura)):
+                            # As medidas do briefing são físicas; geometry usa unidades lógicas.
+                            self.app.geometry(f"{round(largura / escala)}x{round(altura / escala)}")
+                            self.app.update()
+                            self.assertEqual(self.app.tree_busca.winfo_rooty(), self.app.tree_deb.winfo_rooty())
+                            alturas.append(self.app.tree_busca.winfo_height())
+                            self.assertGreater(alturas[-1], 100)
+                            self.assertLessEqual(self.app.rodape_global.winfo_height(), round(28 * escala))
+                            self.assertLessEqual(self.app.rodape_global.winfo_rooty() -
+                                                 (self.app.abas.winfo_rooty() + self.app.abas.winfo_height()), 2)
+                            conferir(self.app)
+                            self.app.alternar_aparencia()
+                            self.app.update()
+                            conferir(self.app)
+                            self.app.trocar_aba("Lista A2")
+                            self.app.update()
+                            self.assertTrue(self.app.tree_a2.winfo_ismapped())
+                            self.assertFalse(self.app.tree_busca.winfo_ismapped())
+                            self.assertEqual(self.app.aba_selecionada.get(), "Lista A2")
+                            conferir(self.app)
+                            self.app.trocar_aba("Buscar e comparar")
+                            self.app.update()
+                            self.assertTrue(self.app.tree_busca.winfo_ismapped())
+                            self.assertEqual(self.app.aba_selecionada.get(), "Buscar e comparar")
+                            conferir(self.app)
+                            self.app.alternar_aparencia()
+                            self.app.update()
+                    self.assertEqual(alturas, sorted(set(alturas)))
+        finally:
+            main.ctk.set_widget_scaling(1)
+            main.ctk.set_window_scaling(1)
 
-    def test_status_longo_quebra_linha_sem_alargar_a_janela(self):
+    def test_teclado_seleciona_registro_e_confirma_pesquisa_com_enter(self):
+        tree = self.app.tree_busca
+        tree.focus_force()
+        tree.focus("0")
+        tree.selection_set("0")
+        tree.event_generate("<Down>")
+        self.app.update()
+        self.assertEqual(tree.selection(), ("1",))
+        self.assertEqual(self.app.botao_adicionar.cget("state"), "normal")
+        entrada = self.app.entrada_busca._entry
+        entrada.focus_force()
+        self.app.busca_var.set("Crédito")
+        entrada.event_generate("<Return>")
+        self.app.update()
+        self.assertEqual(self.app.focus_get(), entrada)
+        self.assertEqual(self.app.termo_busca, "Crédito")
+        self.assertEqual(len(tree.get_children()), 1)
+        self.assertEqual(self.app.var_total.get(), "1")
+
+    def test_status_longo_preserva_mensagem_em_rodape_de_uma_linha(self):
         self.app.geometry("960x560")
         self.app.update()
         altura = self.app.label_status.winfo_height()
         largura = self.app.winfo_width()
-        self.app.status.set("Mensagem de operação com um caminho longo " * 8)
+        mensagem = "Mensagem de operação com um caminho longo " * 8
+        self.app.status.set(mensagem)
         self.app.update()
-        self.assertGreater(self.app.label_status.winfo_height(), altura)
+        self.assertEqual(self.app.label_status.winfo_height(), altura)
+        self.assertLessEqual(self.app.rodape_global.winfo_height(), 28)
+        self.assertEqual(self.app.status.get(), mensagem)
+        self.assertTrue(self.app.status_visivel.get().endswith("…"))
+        with patch("main.messagebox.showinfo") as detalhes:
+            self.app.label_status._label.event_generate("<Button-1>")
+            detalhes.assert_called_once_with("Status", mensagem, parent=self.app)
         self.assertEqual(self.app.winfo_width(), largura)
 
 

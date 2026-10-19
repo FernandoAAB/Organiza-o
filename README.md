@@ -15,15 +15,18 @@ Uma única pesquisa filtra os dois painéis. Ao selecionar e usar **Adicionar ao
 a situação é atualizada ao lado, mantendo a pesquisa. Arraste a divisória central
 para ajustar o espaço de cada painel.
 
-A barra superior reúne apenas **Pesquisar**, **Buscar** e **Limpar**. As duas
+O cabeçalho reúne título, abas e **Aparência** na mesma linha, com 46 pixels.
+A linha de pesquisa reúne **Pesquisar**, **Buscar** e **Limpar**. As duas
 tabelas ficam alinhadas, em painéis com bordas finas e larguras iniciais iguais.
 As contagens ficam na mesma linha dos títulos, alinhadas à direita.
 **Adicionar ao A2** fica no rodapé do A1, ao lado da quantidade selecionada,
 e só é habilitado com uma seleção. **Atualizar** e **Relatório** ficam no rodapé
 da conferência. O filtro **Todos / Débitos / Créditos** fica no mesmo rodapé,
-à esquerda dos botões. Os dois rodapés têm margens menores e botões de 32 pixels,
-deixando mais altura para os registros. As linhas têm 36 pixels, mantendo o tamanho
-da fonte e o espaço necessário para a leitura.
+à esquerda dos botões. Os botões têm 30 pixels e a pesquisa tem 34 pixels.
+As linhas de 27 pixels, com fonte de 13 pixels, permitem exibir mais registros.
+As tabelas crescem com a janela até os botões inferiores; o rodapé global tem
+24 pixels e reúne contadores e estado da atualização. As medidas acompanham a
+escala do sistema e são iguais nos temas claro e escuro.
 Os cartões e as instruções repetidas foram substituídos por resumos em texto.
 Os seletores de tema e cor ficam recolhidos no botão **Aparência**.
 A situação aparece antes do registro, ficando visível mesmo em linhas longas.
@@ -42,13 +45,14 @@ arquivos, a pesquisa ou as regras de comparação.
 As barras de rolagem aparecem apenas quando há conteúdo fora da área visível.
 O cabeçalho aproveita melhor a altura da janela, e o filtro da Lista A2 se
 expande com a largura disponível. A janela inicial considera o tamanho da tela;
-mensagens longas no rodapé quebram linha para continuar legíveis.
+mensagens longas no rodapé são abreviadas para manter uma única linha.
+Clique na mensagem de status para ler seu conteúdo completo.
 Duplo clique adiciona apenas o registro clicado: cabeçalhos e áreas vazias não
 adicionam a seleção anterior. Limpar a seleção também limpa o outro painel.
 
 As capturas da tela inicial e da Lista A2 mostram esse layout. As capturas de
-pesquisa e créditos são anteriores à reorganização. As tabelas têm linhas e cabeçalhos espaçados, sem
-a coluna **Tipo**, e **Registro** é dimensionado pelo conteúdo.
+pesquisa e créditos são anteriores à reorganização. As tabelas mantêm as colunas
+aprovadas, sem a coluna **Tipo**, e **Registro** é dimensionado pelo conteúdo.
 Use a barra horizontal para ler linhas longas por inteiro e arraste a divisória
 central para ampliar um dos painéis.
 
@@ -61,7 +65,7 @@ central para ampliar um dos painéis.
 Mostra os registros escolhidos, mantendo a referência original do A1. Permite
 filtrar, remover e exportar a seleção.
 
-![Lista A2 no tema claro com três registros, valores e linhas originais](docs/images/lista-a2.png)
+![Lista A2 compacta no tema claro com valores e linhas originais](docs/images/lista-a2.png)
 
 ### Pesquisa compartilhada
 
@@ -180,8 +184,9 @@ xvfb-run -a uv run --frozen python scripts/test.py --require-gui
 ```
 
 O comando verifica comparação, cliques, seleção, rolagem, mensagens e
-redimensionamento. Ele falha se houver erros, se nenhum teste for encontrado ou
-se algum teste for ignorado. Para uma verificação parcial sem sessão gráfica,
+redimensionamento, incluindo 1366 × 768, 1600 × 900 e 1920 × 1080,
+nos dois temas e em escalas de 100% e 125%. Ele falha se houver erros, se nenhum
+teste for encontrado ou se algum teste for ignorado. Para uma verificação parcial sem sessão gráfica,
 omita `--require-gui`: os testes da interface serão indicados como ignorados,
 e o resultado não valida a interface. A execução por
 `python -m unittest discover -s tests -v` continua disponível.
