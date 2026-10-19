@@ -72,12 +72,37 @@ class InterfaceTests(unittest.TestCase):
 
     def test_barras_aparecem_so_quando_ha_conteudo_fora_da_tabela(self):
         tree = self.app.tree_busca
-        barras = [w for w in tree.master.winfo_children() if isinstance(w, main.ctk.CTkScrollbar)]
-        self.assertTrue(all(not w.winfo_ismapped() for w in barras))
+        barras = {w.cget("orientation"): w for w in tree.master.winfo_children()
+                  if isinstance(w, main.ctk.CTkScrollbar)}
+
+        def conferir(horizontal, vertical):
+            for orientacao, esperado in (("horizontal", horizontal), ("vertical", vertical)):
+                self.assertEqual(bool(barras[orientacao].winfo_ismapped()), esperado,
+                                 f"Barra {orientacao}: janela={self.app.geometry()}, "
+                                 f"grade={tree.winfo_width()}x{tree.winfo_height()}, "
+                                 f"xview={tree.xview()}, yview={tree.yview()}")
+
+        # A largura inicial depende do monitor, da fonte e do DPI do Windows.
+        # Dois textos curtos e o painel ampliado garantem conteúdo que cabe.
+        Path("a1.txt").write_text("A\nB\n", encoding="utf-8")
+        self.app.buscar_a1()
+        self.app.update()
+        self.app.divisao.sash_place(0, self.app.divisao.winfo_width(), 0)
+        self.app.update()
+        conferir(horizontal=False, vertical=False)
+
+        # Mesmo com apenas duas linhas, estreitar o painel exige rolagem horizontal.
+        self.app.divisao.sash_place(0, 0, 0)
+        self.app.update()
+        conferir(horizontal=True, vertical=False)
+        self.app.divisao.sash_place(0, self.app.divisao.winfo_width(), 0)
+        self.app.update()
+        conferir(horizontal=False, vertical=False)
+
         Path("a1.txt").write_text(("Registro muito longo " * 40 + "100,00D\n") * 50, encoding="utf-8")
         self.app.buscar_a1()
         self.app.update()
-        self.assertTrue(all(w.winfo_ismapped() for w in barras))
+        conferir(horizontal=True, vertical=True)
         tree.xview_moveto(1)
         tree.yview_moveto(1)
         self.app.update()
@@ -86,7 +111,7 @@ class InterfaceTests(unittest.TestCase):
         self.app.busca_var.set("sem resultado")
         self.app.buscar_a1()
         self.app.update()
-        self.assertTrue(all(not w.winfo_ismapped() for w in barras))
+        conferir(horizontal=False, vertical=False)
 
     def test_redimensionamento_mantem_tabelas_alinhadas_e_controles_visiveis(self):
         def conferir(widget):
