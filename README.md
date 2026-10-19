@@ -68,14 +68,18 @@ são locais e ignorados pelo Git; faça cópias de segurança dos registros impo
 ## Uso e comparação
 
 1. Preencha `a1.txt` com um registro por linha. Linhas vazias são ignoradas,
-   preservando a numeração original.
+   preservando a numeração original. Use UTF‑8; arquivos UTF‑8 com BOM também são aceitos.
 2. Em **Buscar e comparar**, digite texto, data ou valor e pressione Enter ou
    clique em **Buscar**. Por exemplo, `145330` encontra `1.453,30`.
    A pesquisa filtra simultaneamente o A1 e a comparação, preservando a ordem original.
+   Os filtros de tipo e o relatório usam a última pesquisa confirmada; digitar
+   um novo termo sem pressionar Enter ou **Buscar** não altera os resultados.
 3. Selecione os registros à esquerda e clique em **Adicionar ao A2 →**, ou use
    duplo clique. A indicação no A1 e a situação na direita são atualizadas sem
    trocar de aba. A seleção localiza a mesma linha no painel ao lado; Ctrl/Shift
    permite escolher vários registros. A comparação contém apenas registros com D/C.
+   Se o A1 for editado em outro programa e a linha escolhida mudar, a inclusão
+   é interrompida e a lista atualizada para você selecionar novamente.
 4. Confira as pendências à direita. **Todos / Débitos / Créditos** filtra o tipo
    apenas nesse painel, e os contadores mostram as quantidades visíveis. **Relatório**
    abre `No/relatorio_debitos.html` no navegador, com a mesma pesquisa e tipo.

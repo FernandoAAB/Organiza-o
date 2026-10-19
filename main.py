@@ -113,7 +113,7 @@ def verificar_dias():
 def carregar_linhas(nome_arquivo):
     if not os.path.exists(nome_arquivo):
         return []
-    with open(nome_arquivo, "r", encoding="utf-8") as f:
+    with open(nome_arquivo, "r", encoding="utf-8-sig") as f:
         return [l.strip() for l in f if l.strip()]
 
 
@@ -122,7 +122,7 @@ def carregar_origem_numerada():
     if not os.path.exists(ARQUIVO_ORIGEM):
         return []
     linhas = []
-    with open(ARQUIVO_ORIGEM, "r", encoding="utf-8") as f:
+    with open(ARQUIVO_ORIGEM, "r", encoding="utf-8-sig") as f:
         for numero, linha in enumerate(f, start=1):
             linha = linha.strip()
             if linha:
@@ -324,6 +324,7 @@ class App(ctk.CTk):
         ctk.set_appearance_mode("dark" if self.modo == "Escuro" else "light")
         self.primarios = []  # botões que usam a cor de destaque
         self.resultados = []
+        self.termo_busca = ""
         self._sincronizando_selecao = False
 
         self.title("Sistema de Busca e Ordenação")
@@ -440,6 +441,7 @@ class App(ctk.CTk):
 
     def mudar_tema(self, modo):
         self.modo = modo
+        self.seg_tema.set(modo)
         ctk.set_appearance_mode("dark" if modo == "Escuro" else "light")
         self.aplicar_tema()
         salvar_config(self.modo, self.acento)
@@ -447,6 +449,7 @@ class App(ctk.CTk):
 
     def mudar_acento(self, acento):
         self.acento = acento
+        self.opt_acento.set(acento)
         self.aplicar_tema()
         salvar_config(self.modo, self.acento)
         self.status.set(f"Cor de destaque: {acento}.")
@@ -511,7 +514,8 @@ class App(ctk.CTk):
             self.after_idle(lambda: self.divisao.sash_place(0, int(self.divisao.winfo_width() * 0.45), 0))
 
     def buscar_a1(self):
-        termo = self.busca_var.get().strip().lower()
+        self.termo_busca = self.busca_var.get().strip()
+        termo = self.termo_busca.lower()
         self.tree_busca.delete(*self.tree_busca.get_children())
         self.resultados = []
         destino = set(carregar_linhas(ARQUIVO_DESTINO))
@@ -553,11 +557,16 @@ class App(ctk.CTk):
         if not sel:
             self.status.set("Selecione um ou mais registros para adicionar.")
             return
+        selecionados_origem = [self.resultados[int(iid)] for iid in sel]
+        origem_atual = dict(carregar_origem_numerada())
+        if any(origem_atual.get(numero) != texto for numero, texto in selecionados_origem):
+            self.buscar_a1()
+            self.status.set("O A1 foi alterado. Confira os registros e selecione novamente.")
+            return
         destino = carregar_linhas(ARQUIVO_DESTINO)
         adicionados = 0
         numeros = set()
-        for iid in sel:
-            numero, texto = self.resultados[int(iid)]
+        for numero, texto in selecionados_origem:
             numeros.add(numero)
             item = f"[{numero}] {texto}"
             if item not in destino:
@@ -679,12 +688,12 @@ class App(ctk.CTk):
         return {"Todos": None, "Débitos": "D", "Créditos": "C"}[self.tipo_comparacao.get()]
 
     def imprimir_relatorio(self):
-        caminho = gerar_relatorio_html(self.tipo_selecionado(), self.busca_var.get())
+        caminho = gerar_relatorio_html(self.tipo_selecionado(), self.termo_busca)
         self.status.set(f"Relatório salvo em {os.path.abspath(caminho)}")
 
     def atualizar_debitos(self):
         self.tree_deb.delete(*self.tree_deb.get_children())
-        resultado, total, faltando = calcular_lancamentos(self.tipo_selecionado(), self.busca_var.get())
+        resultado, total, faltando = calcular_lancamentos(self.tipo_selecionado(), self.termo_busca)
         for i, (numero, texto, ok) in enumerate(resultado):
             natureza = "Débito" if extrair_lancamento(texto)[0] == "D" else "Crédito"
             situacao = "OK" if ok else "FALTA NO A2"
