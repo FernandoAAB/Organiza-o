@@ -16,7 +16,8 @@ a situação é atualizada ao lado, mantendo a pesquisa. Arraste a divisória ce
 para ajustar o espaço de cada painel.
 
 A barra superior reúne apenas **Pesquisar**, **Buscar** e **Limpar**. As duas
-tabelas ficam alinhadas, com as contagens na mesma linha dos títulos.
+tabelas ficam alinhadas, em painéis com bordas finas e larguras iniciais iguais.
+As contagens ficam na mesma linha dos títulos, alinhadas à direita.
 **Adicionar ao A2** fica no rodapé do A1, ao lado da quantidade selecionada,
 e só é habilitado com uma seleção. **Atualizar** e **Relatório** ficam no rodapé
 da conferência. O filtro **Todos / Débitos / Créditos** fica no mesmo rodapé,
