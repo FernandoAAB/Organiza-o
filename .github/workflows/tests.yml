@@ -1,0 +1,52 @@
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.11', '3.12']
+    defaults:
+      run:
+        shell: bash
+    env:
+      UV_PYTHON_DOWNLOADS: never
+      UV_PYTHON_PREFERENCE: only-system
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          enable-cache: true
+      - name: Instalar dependências do projeto
+        run: uv sync --frozen --python "${{ matrix.python }}"
+      - name: Preparar sessão gráfica no Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth python3-tk
+      - name: Testar comparação e interface no Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a uv run --frozen --no-sync --python "${{ matrix.python }}" python scripts/test.py --require-gui
+      - name: Testar comparação e interface no Windows
+        if: runner.os == 'Windows'
+        run: uv run --frozen --no-sync --python "${{ matrix.python }}" python scripts/test.py --require-gui

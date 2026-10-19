@@ -165,7 +165,32 @@ O arquivo de exemplo do commit `5ac63f7` contém 98 registros sem datas explíci
 O relatório trata o conteúdo dos registros como texto, inclusive caracteres
 como `<`, `>` e `&`. A impressão depende do navegador e da impressora disponível.
 
-Para executar os testes, use `.venv/bin/python -m unittest discover -s tests -v`.
-Os testes da interface precisam de uma sessão gráfica; no Linux sem `DISPLAY`,
-eles são indicados como ignorados. Com sessão gráfica, a suíte verifica cliques,
-seleção, rolagem, mensagens e redimensionamento, além da comparação dos registros.
+## Desenvolvimento e validação
+
+Após `uv sync --frozen`, execute a suíte completa em uma sessão gráfica:
+
+```sh
+uv run --frozen python scripts/test.py --require-gui
+```
+
+No Linux com Xvfb instalado, use:
+
+```sh
+xvfb-run -a uv run --frozen python scripts/test.py --require-gui
+```
+
+O comando verifica comparação, cliques, seleção, rolagem, mensagens e
+redimensionamento. Ele falha se houver erros, se nenhum teste for encontrado ou
+se algum teste for ignorado. Para uma verificação parcial sem sessão gráfica,
+omita `--require-gui`: os testes da interface serão indicados como ignorados,
+e o resultado não valida a interface. A execução por
+`python -m unittest discover -s tests -v` continua disponível.
+
+O [workflow de testes](.github/workflows/tests.yml) executa a suíte completa no
+Windows e no Linux, com Python 3.11 e 3.12, em pushes para `main` e pull requests.
+Os testes usam arquivos temporários, preservando os dados de uso. As orientações
+para agentes estão em [AGENTS.md](AGENTS.md).
+
+As práticas foram adaptadas do repositório [mattpocock/skills](https://github.com/mattpocock/skills/tree/5beb35b040e3de97e54fa9e386d7e42d15c295c2),
+especialmente [writing-for-agents](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/writing-for-agents/SKILL.md)
+e as recomendações de [testes por comportamento](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/engineering/tdd/tests.md).
