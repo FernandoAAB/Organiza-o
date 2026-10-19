@@ -11,6 +11,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from tkinter import ttk, messagebox
 from tkinter import font as tkfont
+from PIL import Image, ImageDraw
 
 import customtkinter as ctk  # pip install customtkinter
 
@@ -23,22 +24,25 @@ CONFIG = os.path.join(PASTA_REG, "config.json")
 # TEMAS  (cada cor: (claro, escuro))
 
 TEMAS = {
-    "bg": ("#f1f5f9", "#0f172a"),
-    "painel": ("#ffffff", "#162130"),
-    "superficie": ("#ffffff", "#1b283a"),
-    "borda": ("#d1d5db", "#2b394d"),
-    "campo": ("#e2e8f0", "#243448"),
-    "campo_hover": ("#cbd5e1", "#33455c"),
-    "selecao": ("#dbeafe", "#163f73"),
-    "texto": ("#0f172a", "#f8fafc"),
-    "cinza": ("#64748b", "#94a3b8"),
-    "cabecalho": ("#475569", "#cbd5e1"),
-    "verde": ("#16a34a", "#4ade80"),
-    "vermelho": ("#e11d48", "#fb7185"),
+    "bg": ("#f3f7fb", "#06121e"),
+    "painel": ("#fbfdff", "#0b1c2b"),
+    "superficie": ("#f5f9fc", "#071724"),
+    "borda": ("#dce6ef", "#183143"),
+    "campo": ("#ffffff", "#152c3d"),
+    "campo_hover": ("#eaf0f6", "#203b4e"),
+    "selecao": ("#d9eaff", "#123e67"),
+    "texto": ("#102036", "#f0f6fc"),
+    "cinza": ("#586b81", "#acbfd1"),
+    "cabecalho": ("#344e69", "#bfd1e2"),
+    "grade_cabecalho": ("#edf3f9", "#071826"),
+    "alternada": ("#f1f6fb", "#102332"),
+    "verde": ("#008b66", "#00d6a0"),
+    "vermelho": ("#e11d48", "#ff416c"),
     "marcado": ("#fef08a", "#3b2d54"),
     "perigo": ("#ffe4e6", "#4c1d24"),
     "perigo_hover": ("#fecdd3", "#6b2129"),
 }
+
 
 ACENTOS = {  # (normal, hover)
     "Índigo": ("#6366f1", "#4f46e5"),
@@ -66,13 +70,13 @@ def carregar_config():
         with open(CONFIG, "r", encoding="utf-8") as f:
             dados = json.load(f)
         if not isinstance(dados, dict):
-            return "Escuro", "Azul"
+            return "Escuro", "Esmeralda"
         modo = dados.get("tema", "Escuro")
-        acento = dados.get("acento", "Azul")
+        acento = dados.get("acento", "Esmeralda")
         return (modo if modo in ("Escuro", "Claro") else "Escuro",
-                acento if isinstance(acento, str) and acento in ACENTOS else "Azul")
+                acento if isinstance(acento, str) and acento in ACENTOS else "Esmeralda")
     except (OSError, ValueError):
-        return "Escuro", "Azul"
+        return "Escuro", "Esmeralda"
 
 
 def salvar_config(modo, acento):
@@ -342,19 +346,60 @@ def formatar_valor_registro(texto):
     return f"{numero} {tipo}"
 
 
+def icone(nome, cor="cabecalho", tamanho=18):
+    """Ícones vetoriais, sem depender de símbolos disponíveis na fonte do PC."""
+    def desenhar(modo):
+        imagem = Image.new("RGBA", (96, 96))
+        d = ImageDraw.Draw(imagem)
+        tinta = cm(cor, modo) if cor in TEMAS else cor
+        linha = 7
+        if nome == "arquivo":
+            d.line([(25, 12), (57, 12), (74, 29), (74, 84), (25, 84), (25, 12)], fill=tinta, width=linha)
+            d.line([(55, 13), (55, 32), (74, 32)], fill=tinta, width=5)
+            for y in (46, 59, 72):
+                d.line((37, y, 62, y), fill=tinta, width=5)
+        elif nome in ("confirmado", "alerta"):
+            d.ellipse((6, 6, 90, 90), fill=tinta)
+            if nome == "confirmado":
+                d.line([(28, 48), (43, 62), (69, 32)], fill="white", width=9)
+            else:
+                d.line((48, 24, 48, 56), fill="white", width=9)
+                d.ellipse((43, 66, 53, 76), fill="white")
+        elif nome == "busca":
+            d.ellipse((13, 10, 65, 62), outline=tinta, width=linha)
+            d.line((59, 57, 84, 82), fill=tinta, width=linha)
+        elif nome == "adicionar":
+            d.ellipse((9, 9, 87, 87), outline=tinta, width=linha)
+            d.line((48, 28, 48, 68), fill=tinta, width=linha)
+            d.line((28, 48, 68, 48), fill=tinta, width=linha)
+        elif nome == "atualizar":
+            d.arc((12, 12, 84, 84), 35, 310, fill=tinta, width=linha)
+            d.polygon([(79, 11), (84, 42), (56, 33)], fill=tinta)
+        elif nome == "aparencia":
+            for xy in ((38, 3, 58, 93), (3, 38, 93, 58)):
+                d.rounded_rectangle(xy, radius=5, fill=tinta)
+            d.line((16, 16, 80, 80), fill=tinta, width=18)
+            d.line((80, 16, 16, 80), fill=tinta, width=18)
+            d.ellipse((17, 17, 79, 79), fill=tinta)
+            d.ellipse((34, 34, 62, 62), fill=cm("campo", modo))
+        return imagem
+    return ctk.CTkImage(light_image=desenhar("Claro"), dark_image=desenhar("Escuro"),
+                        size=(tamanho, tamanho))
+
+
 def estilizar_tabelas(modo, acento, escala=1):
     st = ttk.Style()
     st.theme_use("clam")
     st.configure("Treeview", background=cm("painel", modo),
                  fieldbackground=cm("painel", modo), foreground=cm("texto", modo),
                  rowheight=round(27 * escala), borderwidth=0, font=(FONTE, -round(13 * escala)))
-    st.configure("Treeview.Heading", background=cm("bg", modo),
+    st.configure("Treeview.Heading", background=cm("grade_cabecalho", modo),
                  foreground=cm("cabecalho", modo), relief="flat", borderwidth=0,
                  padding=(round(6 * escala), round(5 * escala)), font=(FONTE, -round(12 * escala), "bold"))
     st.map("Treeview", background=[("selected", cm("selecao", modo))], foreground=[])
-    st.map("Origem.Treeview", background=[("selected", acento if modo == "Claro" else cm("selecao", modo))],
+    st.map("Origem.Treeview", background=[("selected", "#087cfa")],
            foreground=[("selected", "#ffffff")])
-    st.map("Treeview.Heading", background=[("active", cm("bg", modo))])
+    st.map("Treeview.Heading", background=[("active", cm("grade_cabecalho", modo))])
     st.layout("Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
 
 
@@ -362,7 +407,7 @@ class AbasCompactas(ctk.CTkFrame):
     """Conteúdo expansível, com navegação no cabeçalho da janela."""
 
     def __init__(self, pai, selecao):
-        super().__init__(pai, fg_color=c("superficie"), corner_radius=8)
+        super().__init__(pai, fg_color="transparent", corner_radius=0)
         self.selecao = selecao
         self.paineis = {}
         self.atual = None
@@ -384,7 +429,7 @@ class AbasCompactas(ctk.CTkFrame):
             self.paineis[self.atual].grid_remove()
         self.atual = nome
         self.selecao.set(nome)
-        self.paineis[nome].grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+        self.paineis[nome].grid(row=0, column=0, sticky="nsew")
 
 
 class App(ctk.CTk):
@@ -414,16 +459,20 @@ class App(ctk.CTk):
         self._montar_cabecalho()
 
         self.status = tk.StringVar(value="Pronto.")
-        self.rodape_global = ctk.CTkFrame(self, height=24, fg_color="transparent")
-        self.rodape_global.pack(side="bottom", fill="x", padx=10)
+        self.rodape_global = ctk.CTkFrame(self, height=24, corner_radius=0,
+                                                       fg_color=c("superficie"), border_width=1, border_color=c("borda"))
+        self.rodape_global.pack(side="bottom", fill="x", pady=(2, 0))
         self.rodape_global.pack_propagate(False)
         self.contadores = tk.StringVar()
         ctk.CTkLabel(self.rodape_global, textvariable=self.contadores, height=24,
-                     text_color=c("cinza"), font=(FONTE, 11)).pack(side="left")
+                     text_color=c("cinza"), font=(FONTE, 11)).pack(side="left", padx=12)
         self.status_visivel = tk.StringVar()
         self.label_status = ctk.CTkLabel(self.rodape_global, textvariable=self.status_visivel,
                                         height=24, anchor="e", text_color=c("cinza"), font=(FONTE, 11))
-        self.label_status.pack(side="right", fill="x", expand=True, padx=(12, 0))
+        self.ponto_status = ctk.CTkLabel(self.rodape_global, text="●", width=14, height=24,
+                                               text_color=c("verde"), font=(FONTE, 12))
+        self.ponto_status.pack(side="right", padx=(0, 8))
+        self.label_status.pack(side="right", fill="x", expand=True, padx=(12, 4))
         self.label_status.bind("<Configure>", self.ajustar_status)
         self.label_status.configure(cursor="hand2")
         self.label_status.bind("<Button-1>", lambda evento: messagebox.showinfo(
@@ -431,10 +480,10 @@ class App(ctk.CTk):
         self.status.trace_add("write", self.ajustar_status)
 
         self.abas = AbasCompactas(self, self.aba_selecionada)
-        self.abas.pack(fill="both", expand=True, padx=8)
+        self.abas.pack(fill="both", expand=True, padx=12)
         self.aba_busca = self.abas.add("Buscar e comparar")
         self.aba_a2 = self.abas.add("Lista A2")
-        self.aba_a2.configure(fg_color=c("painel"), border_width=1, border_color=c("borda"), corner_radius=12)
+        self.aba_a2.configure(fg_color=c("painel"), border_width=1, border_color=c("borda"), corner_radius=6)
 
         self._montar_aba_busca()
         self._montar_aba_a2()
@@ -473,15 +522,19 @@ class App(ctk.CTk):
         else:
             kw = dict(fg_color=c("campo"), hover_color=c("campo_hover"),
                       text_color=c("texto"))
-        b = ctk.CTkButton(pai, text=texto, command=comando, width=largura, height=altura,
-                          corner_radius=6, font=(FONTE, 13, "bold"), **kw)
+        simbolo = {"Aparência": "aparencia", "Adicionar ao A2": "adicionar",
+                   "Atualizar": "atualizar", "Relatório": "arquivo"}.get(texto)
+        imagem = icone(simbolo, "#ffffff" if primario else "cabecalho", 16) if simbolo else None
+        b = ctk.CTkButton(pai, text=texto, image=imagem, command=comando, width=largura, height=altura,
+                          corner_radius=5, border_width=0 if primario else 1, border_color=c("borda"),
+                          font=(FONTE, 12, "bold"), **kw)
         if primario:
             self.primarios.append(b)
         return b
 
     def campo(self, pai, var, placeholder, largura=380):
         return ctk.CTkEntry(pai, textvariable=var, height=34, width=largura,
-                            corner_radius=10, border_width=0, fg_color=c("campo"),
+                            corner_radius=5, border_width=0, fg_color=c("campo"),
                             text_color=c("texto"), placeholder_text=placeholder,
                             placeholder_text_color=c("cinza"), font=(FONTE, 13))
 
@@ -531,16 +584,16 @@ class App(ctk.CTk):
         cab.pack(fill="x", padx=10, pady=(2, 2))
         cab.grid_columnconfigure(2, weight=1)
         ctk.CTkLabel(cab, text="Busca e Ordenação", text_color=c("texto"),
-                     font=(FONTE, 20, "bold"), height=42).grid(row=0, column=0, padx=(0, 14))
+                     font=(FONTE, 22, "bold"), height=42).grid(row=0, column=0, padx=(0, 14))
         self.aba_selecionada = tk.StringVar(value="Buscar e comparar")
         self.navegacao = ctk.CTkSegmentedButton(
             cab, values=["Buscar e comparar", "Lista A2"], variable=self.aba_selecionada,
-            command=self.trocar_aba, height=30, font=(FONTE, 12, "bold"),
+            command=self.trocar_aba, height=32, font=(FONTE, 14, "bold"),
             fg_color=c("campo"), unselected_color=c("campo"),
             unselected_hover_color=c("campo_hover"), text_color=("#111827", "#ffffff"))
         self.navegacao.grid(row=0, column=1)
         self.botao(cab, "Aparência", self.alternar_aparencia,
-                   largura=96, altura=30).grid(row=0, column=4, padx=(8, 0))
+                   largura=104, altura=30).grid(row=0, column=4, padx=(8, 0))
         self.painel_aparencia = ctk.CTkFrame(cab, fg_color="transparent")
 
         self.opt_acento = ctk.CTkOptionMenu(
@@ -564,6 +617,7 @@ class App(ctk.CTk):
         self.seg_tema.pack(side="right")
         ctk.CTkLabel(self.painel_aparencia, text="Tema:", text_color=c("cinza"),
                      font=(FONTE, 13)).pack(side="right", padx=(8, 4))
+        self.painel_aparencia.grid(row=0, column=3)
 
     def trocar_aba(self, nome):
         self.abas.set(nome)
@@ -598,14 +652,16 @@ class App(ctk.CTk):
         if self.botao_adicionar.cget("state") == "disabled":
             self.botao_adicionar.configure(fg_color=c("campo"), text_color_disabled=c("cinza"))
         self.navegacao.configure(selected_color=normal, selected_hover_color=hover)
-        self.seg_tema.configure(selected_color=normal, selected_hover_color=hover)
+        self.seg_tema.configure(selected_color=("#1686ff", normal), selected_hover_color=("#0874e8", hover))
         # tabelas (ttk) precisam ser reestilizadas
         estilizar_tabelas(self.modo, normal, self.painel_busca._apply_widget_scaling(1))
         self.tree_busca.tag_configure("ja", foreground=cm("cinza", self.modo))
         self.tree_busca.tag_configure("novo", foreground=cm("texto", self.modo))
         self.tree_deb.tag_configure("falta", foreground=cm("vermelho", self.modo))
         self.tree_deb.tag_configure("ok", foreground=cm("verde", self.modo))
-        self.divisao.configure(bg=cm("superficie", self.modo))
+        for tree in (self.tree_busca, self.tree_deb, self.tree_a2):
+            tree.tag_configure("alternada", background=cm("alternada", self.modo))
+        self.divisao.configure(bg=cm("bg", self.modo))
 
     def ajustar_escala_tabelas(self, evento=None):
         escala = self.painel_busca._apply_widget_scaling(1)
@@ -621,25 +677,58 @@ class App(ctk.CTk):
     #  aba 1: buscar no A1 
     def _montar_aba_busca(self):
         topo = ctk.CTkFrame(self.aba_busca, fg_color="transparent")
-        topo.pack(fill="x", padx=12, pady=(4, 6))
+        topo.pack(fill="x", pady=(2, 6))
+        topo.grid_columnconfigure(0, weight=1)
+        pesquisa = ctk.CTkFrame(topo, fg_color="transparent")
+        pesquisa.grid(row=0, column=0, sticky="ew", padx=(0, 20))
+        pesquisa.grid_columnconfigure(0, weight=1)
+        caixa = ctk.CTkFrame(pesquisa, height=34, fg_color=c("campo"), corner_radius=5,
+                              border_width=1, border_color=c("borda"))
+        caixa.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(caixa, text="", image=icone("busca", tamanho=16), width=30, height=32).pack(side="left", padx=(6, 0))
         self.busca_var = tk.StringVar()
-        ctk.CTkLabel(topo, text="Pesquisar", font=(FONTE, 14),
-                     text_color=c("cinza")).pack(side="left", padx=(0, 12))
-        entrada = self.campo(topo, self.busca_var, "Texto, data ou valor")
+        entrada = self.campo(caixa, self.busca_var, "Pesquisar...")
         self.entrada_busca = entrada
-        entrada.pack(side="left", fill="x", expand=True)
+        entrada.configure(height=32)
+        entrada.pack(side="left", fill="x", expand=True, padx=(0, 4), pady=1)
         entrada.bind("<Return>", lambda e: self.buscar_a1())
         entrada.focus_set()
-        self.botao(topo, "Buscar", self.buscar_a1, largura=96, altura=30).pack(side="left", padx=10)
-        self.botao(topo, "Limpar", self.mostrar_todos, largura=90, altura=30).pack(side="left")
+        self.dica_busca = ctk.CTkLabel(caixa, text="Pesquisar...", height=24,
+                                       text_color=c("cinza"), font=(FONTE, 12))
+        self.dica_busca.place(x=42, rely=0.5, anchor="w")
+        self.dica_busca.bind("<Button-1>", lambda evento: entrada.focus_set())
+        self.busca_var.trace_add("write", self.atualizar_dica_busca)
+        self.botao(pesquisa, "Buscar", self.buscar_a1, primario=True, largura=84, altura=32).grid(row=0, column=1, padx=(10, 8))
+        self.botao(pesquisa, "Limpar", self.mostrar_todos, largura=84, altura=32).grid(row=0, column=2)
+        indicadores = ctk.CTkFrame(topo, fg_color="transparent")
+        indicadores.grid(row=0, column=1, sticky="e")
+        self.indicador_origem = tk.StringVar(value="0")
+        self.indicador_ok = tk.StringVar(value="0")
+        self.indicador_falta = tk.StringVar(value="0")
+        self.cartoes_resumo = []
+        for coluna, (variavel, titulo, simbolo, cor) in enumerate((
+                (self.indicador_origem, "Registros A1", "arquivo", "cabecalho"),
+                (self.indicador_ok, "Conferidos", "confirmado", "verde"),
+                (self.indicador_falta, "Faltando no A2", "alerta", "vermelho"))):
+            cartao = ctk.CTkFrame(indicadores, height=44, width=132, corner_radius=5,
+                                   fg_color=c("painel"), border_width=1, border_color=c("borda"))
+            cartao.grid(row=0, column=coluna, padx=(0 if coluna == 0 else 6, 0))
+            cartao.grid_propagate(False)
+            cartao.grid_columnconfigure(1, weight=1)
+            ctk.CTkLabel(cartao, text="", image=icone(simbolo, cor, 24), width=36, height=40).grid(row=0, column=0, rowspan=2, padx=(4, 2))
+            ctk.CTkLabel(cartao, textvariable=variavel, height=20, anchor="w", text_color=c("texto"),
+                         font=(FONTE, 17, "bold")).grid(row=0, column=1, sticky="ew", pady=(3, 0))
+            ctk.CTkLabel(cartao, text=titulo, height=15, anchor="w", text_color=c(cor),
+                         font=(FONTE, 11)).grid(row=1, column=1, sticky="ew", pady=(0, 4))
+            self.cartoes_resumo.append(cartao)
         self.divisao = tk.PanedWindow(self.aba_busca, orient="horizontal", sashwidth=8,
                                      bd=0, sashrelief="flat", showhandle=False,
-                                     bg=cm("superficie", self.modo), opaqueresize=True)
+                                     bg=cm("bg", self.modo), opaqueresize=True)
         self.divisao.pack(fill="both", expand=True)
-        self.painel_busca = ctk.CTkFrame(self.divisao, bg_color=c("superficie"), fg_color=c("painel"),
-                                       border_width=1, border_color=c("borda"), corner_radius=12)
-        self.aba_deb = ctk.CTkFrame(self.divisao, bg_color=c("superficie"), fg_color=c("painel"),
-                                  border_width=1, border_color=c("borda"), corner_radius=12)
+        self.painel_busca = ctk.CTkFrame(self.divisao, bg_color=c("bg"), fg_color=c("painel"),
+                                       border_width=1, border_color=c("borda"), corner_radius=6)
+        self.aba_deb = ctk.CTkFrame(self.divisao, bg_color=c("bg"), fg_color=c("painel"),
+                                  border_width=1, border_color=c("borda"), corner_radius=6)
         self.divisao.add(self.painel_busca, minsize=380, stretch="always", width=600)
         self.divisao.add(self.aba_deb, minsize=440, stretch="always")
         self._divisao_posicionada = False
@@ -653,15 +742,15 @@ class App(ctk.CTk):
         cabecalho.grid(row=0, column=0, sticky="ew", padx=8, pady=3)
         cabecalho.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(cabecalho, text="Registros do A1",
-                    font=(FONTE, 15, "bold"), text_color=c("texto")).grid(row=0, column=0, sticky="w")
+                    font=(FONTE, 16, "bold"), text_color=c("texto")).grid(row=0, column=0, sticky="w")
         self.resumo_origem = tk.StringVar()
         ctk.CTkLabel(cabecalho, textvariable=self.resumo_origem,
-                    text_color=c("cinza"), font=(FONTE, 12)).grid(row=0, column=1, sticky="e", padx=(12, 0))
+                    text_color=c("cinza"), font=(FONTE, 12)).grid(row=0, column=1, sticky="w", padx=(8, 0))
 
         frame, self.tree_busca = self._tabela(
             self.painel_busca, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro"),
                                 ("situacao", "No A2"), ("valor", "Valor")],
-            [42, 80, 0, 80, 128])
+            [42, 80, 0, 60, 112])
         frame.grid(row=1, column=0, sticky="nsew", padx=8)
         self.tree_busca.configure(displaycolumns=("ordem", "linha", "situacao", "valor", "texto"))
         rodape = ctk.CTkFrame(self.painel_busca, fg_color="transparent")
@@ -670,11 +759,17 @@ class App(ctk.CTk):
         ctk.CTkLabel(rodape, textvariable=self.resumo_selecao,
                      text_color=c("cinza"), font=(FONTE, 12)).pack(side="left")
         self.botao_adicionar = self.botao(rodape, "Adicionar ao A2", self.adicionar_e_comparar,
-                                          primario=True, largura=156, altura=30)
+                                          primario=True, largura=164, altura=32)
         self.botao_adicionar.pack(side="right")
         self.botao_adicionar.configure(state="disabled")
         self.tree_busca.bind("<Double-1>", self.adicionar_por_duplo_clique)
         self.tree_busca.bind("<<TreeviewSelect>>", self.atualizar_selecao_origem)
+
+    def atualizar_dica_busca(self, *args):
+        if self.busca_var.get():
+            self.dica_busca.place_forget()
+        else:
+            self.dica_busca.place(x=42, rely=0.5, anchor="w")
 
     def atualizar_selecao_origem(self, evento=None):
         quantidade = len(self.tree_busca.selection())
@@ -684,6 +779,7 @@ class App(ctk.CTk):
         self.botao_adicionar.configure(fg_color=ACENTOS[self.acento][0] if quantidade else c("campo"),
                                        text_color_disabled=c("cinza"))
         self.sincronizar_selecao(self.tree_busca, self.tree_deb)
+        self.atualizar_contadores()
 
     def posicionar_divisao(self, evento):
         for painel, minimo in ((self.painel_busca, 380), (self.aba_deb, 440)):
@@ -709,9 +805,9 @@ class App(ctk.CTk):
             ja = n in conferidos
             self.tree_busca.insert("", "end", iid=str(i),
                                    values=(i + 1, n, t, "✓ no A2" if ja else "", formatar_valor_registro(t)),
-                                   tags=("ja" if ja else "novo",))
+                                   tags=("ja" if ja else "novo", "alternada" if i % 2 else "normal"))
         self.ajustar_largura_registro(self.tree_busca)
-        self.resumo_origem.set(f"{len(self.resultados)} registros disponíveis")
+        self.resumo_origem.set(f"({len(self.resultados)} registros disponíveis)")
         self.atualizar_selecao_origem()
         if termo:
             self.status.set(f"{len(self.resultados)} resultado(s) para '{termo}'.")
@@ -821,7 +917,8 @@ class App(ctk.CTk):
                 continue
             total += 1
             numero = extrair_numero(item) if re.match(r"^\[\d+\]", item) else "—"
-            self.tree_a2.insert("", "end", iid=str(indice), values=(total, numero, texto, formatar_valor_registro(texto)))
+            self.tree_a2.insert("", "end", iid=str(indice), values=(total, numero, texto, formatar_valor_registro(texto)),
+                                tags=("alternada" if total % 2 == 0 else "normal",))
         self.ajustar_largura_registro(self.tree_a2)
         if self.abas.get() == "Lista A2":
             self.status.set(f"A2: {total} registro(s) exibido(s).")
@@ -857,7 +954,7 @@ class App(ctk.CTk):
         cabecalho.grid(row=0, column=0, sticky="ew", padx=8, pady=3)
         cabecalho.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(cabecalho, text="Conferência A1 × A2",
-                    font=(FONTE, 15, "bold"), text_color=c("texto")).grid(row=0, column=0, sticky="w")
+                    font=(FONTE, 16, "bold"), text_color=c("texto")).grid(row=0, column=0, sticky="w")
         rodape = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
         rodape.grid(row=2, column=0, sticky="ew", padx=8, pady=3)
         self.tipo_comparacao = tk.StringVar(value="Todos")
@@ -875,18 +972,18 @@ class App(ctk.CTk):
         self.var_falta = tk.StringVar(value="0")
         self.resumo_conferencia = tk.StringVar()
         ctk.CTkLabel(cabecalho, textvariable=self.resumo_conferencia,
-                     text_color=c("cinza"), font=(FONTE, 12)).grid(row=0, column=1, sticky="e", padx=(12, 0))
+                     text_color=c("cinza"), font=(FONTE, 12)).grid(row=0, column=1, sticky="w", padx=(8, 0))
 
         frame, self.tree_deb = self._tabela(
             self.aba_deb, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro"),
                            ("situacao", "Situação"), ("valor", "Valor")],
-            [42, 80, 0, 128, 128])
+            [42, 80, 0, 116, 110])
         frame.grid(row=1, column=0, sticky="nsew", padx=8)
         self.tree_deb.configure(style="Treeview", displaycolumns=("ordem", "linha", "situacao", "valor", "texto"))
         self.botao(rodape, "Relatório", self.imprimir_relatorio,
-                   largura=96, altura=30).pack(side="right")
+                   largura=108, altura=32).pack(side="right")
         self.botao(rodape, "Atualizar", self.atualizar_tudo,
-                   largura=96, altura=30).pack(side="right", padx=(0, 10))
+                   largura=108, altura=32).pack(side="right", padx=(0, 10))
         self.tree_deb.bind("<<TreeviewSelect>>", lambda e: self.sincronizar_selecao(self.tree_deb, self.tree_busca))
 
     def tipo_selecionado(self):
@@ -901,17 +998,26 @@ class App(ctk.CTk):
         resultado, total, faltando = calcular_lancamentos(self.tipo_selecionado(), self.termo_busca)
         for i, (numero, texto, ok) in enumerate(resultado):
             situacao = "OK" if ok else "FALTA NO A2"
-            tags = ["ok" if ok else "falta"]
+            tags = ["ok" if ok else "falta", "alternada" if i % 2 else "normal"]
             self.tree_deb.insert("", "end", iid=str(i),
                                  values=(i + 1, numero, texto, situacao, formatar_valor_registro(texto)), tags=tuple(tags))
         self.ajustar_largura_registro(self.tree_deb)
         self.var_total.set(str(total))
         self.var_falta.set(str(faltando))
-        self.resumo_conferencia.set(f"{total} exibidos · {faltando} faltando no A2")
-        self.contadores.set(f"A1: {len(self.resultados)} registros | Conferência: {total} lançamentos | Faltando: {faltando}")
+        self.resumo_conferencia.set(f"({total} exibidos · {faltando} faltando no A2)")
+        self.indicador_origem.set(str(len(self.resultados)))
+        self.indicador_ok.set(str(total - faltando))
+        self.indicador_falta.set(str(faltando))
+        self.atualizar_contadores()
         self.sincronizar_selecao(self.tree_busca, self.tree_deb)
         if self.abas.get() == "Buscar e comparar":
             self.status.set(f"Atualizado em {datetime.now():%d/%m/%Y %H:%M:%S}")
+
+    def atualizar_contadores(self):
+        self.contadores.set(f"A1: {len(self.resultados)} registros  |  "
+                            f"Conferência: {self.var_total.get()} lançamentos  |  "
+                            f"Faltando: {self.var_falta.get()}  |  "
+                            f"Selecionados: {len(self.tree_busca.selection())}")
 
     def atualizar_tudo(self):
         self.buscar_a1()

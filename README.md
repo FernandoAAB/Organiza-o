@@ -15,24 +15,31 @@ Uma única pesquisa filtra os dois painéis. Ao selecionar e usar **Adicionar ao
 a situação é atualizada ao lado, mantendo a pesquisa. Arraste a divisória central
 para ajustar o espaço de cada painel.
 
-O cabeçalho reúne título, abas e **Aparência** na mesma linha, com 46 pixels.
-A linha de pesquisa reúne **Pesquisar**, **Buscar** e **Limpar**. As duas
-tabelas ficam alinhadas, em painéis com bordas finas e larguras iniciais iguais.
-As contagens ficam na mesma linha dos títulos, alinhadas à direita.
+A composição visual segue as referências clara e escura do briefing: título,
+abas, seletores de tema/cor e **Aparência** na mesma linha, com 46 pixels.
+A pesquisa tem ícone de lupa, campo **Pesquisar**, **Buscar** e **Limpar**, ao lado
+dos cartões **Registros A1**, **Conferidos** e **Faltando no A2**. Os cartões
+acompanham os dados exibidos: **Conferidos** conta somente lançamentos OK,
+considerando a pesquisa e o filtro de tipo.
+As tabelas ficam alinhadas em painéis com bordas finas, larguras iniciais iguais
+e linhas alternadas. As contagens ficam junto dos títulos, na mesma linha.
 **Adicionar ao A2** fica no rodapé do A1, ao lado da quantidade selecionada,
 e só é habilitado com uma seleção. **Atualizar** e **Relatório** ficam no rodapé
 da conferência. O filtro **Todos / Débitos / Créditos** fica no mesmo rodapé,
-à esquerda dos botões. Os botões têm 30 pixels e a pesquisa tem 34 pixels.
+à esquerda dos botões. Os botões têm 30 a 32 pixels e a pesquisa tem 34 pixels.
 As linhas de 27 pixels, com fonte de 13 pixels, permitem exibir mais registros.
 As tabelas crescem com a janela até os botões inferiores; o rodapé global tem
-24 pixels e reúne contadores e estado da atualização. As medidas acompanham a
+24 pixels e reúne contadores, quantidade selecionada e estado da atualização. As medidas acompanham a
 escala do sistema e são iguais nos temas claro e escuro.
-Os cartões e as instruções repetidas foram substituídos por resumos em texto.
-Os seletores de tema e cor ficam recolhidos no botão **Aparência**.
+Os seletores de tema e cor ficam visíveis no cabeçalho e podem ser recolhidos
+pelo botão **Aparência**. Os controles usam ícones desenhados no aplicativo,
+sem depender de símbolos especiais nas fontes do computador.
+**Esmeralda** é o destaque inicial; as preferências já salvas continuam válidas.
 A situação aparece antes do registro, ficando visível mesmo em linhas longas.
 Na conferência, registros **OK** ficam em verde e **FALTA NO A2** em vermelho,
 tanto no tema claro quanto no escuro.
-O tema escuro usa fundos em azul profundo e o claro mantém os painéis brancos.
+O tema escuro usa fundos em azul profundo e o claro mantém os painéis brancos,
+com bordas discretas e faixas alternadas para acompanhar cada linha.
 A seleção da conferência preserva o verde e o vermelho sobre um fundo azul
 adequado a cada tema; linhas selecionadas no A1 e na Lista A2 usam texto branco.
 O botão de inclusão fica neutro enquanto não houver seleção.
@@ -58,7 +65,7 @@ central para ampliar um dos painéis.
 
 ![Tema escuro com Aparência expandida e coluna Valor nos dois painéis](docs/images/tela-inicial.png)
 
-![Tema claro com seleção colorida e coluna Valor nos dois painéis](docs/images/tema-claro.png)
+![Tema claro com cartões, ícones e linhas alternadas nos dois painéis](docs/images/tema-claro.png)
 
 ### Lista A2
 
@@ -183,7 +190,7 @@ No Linux com Xvfb instalado, use:
 xvfb-run -a uv run --frozen python scripts/test.py --require-gui
 ```
 
-O comando verifica comparação, cliques, seleção, rolagem, mensagens e
+O comando verifica comparação, indicadores, cliques, seleção, rolagem, mensagens e
 redimensionamento, incluindo 1366 × 768, 1600 × 900 e 1920 × 1080,
 nos dois temas e em escalas de 100% e 125%. Ele falha se houver erros, se nenhum
 teste for encontrado ou se algum teste for ignorado. Para uma verificação parcial sem sessão gráfica,

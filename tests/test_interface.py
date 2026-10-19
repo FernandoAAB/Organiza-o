@@ -142,6 +142,31 @@ class InterfaceTests(unittest.TestCase):
             main.ctk.set_widget_scaling(1)
             main.ctk.set_window_scaling(1)
 
+    def test_indicadores_acompanham_inclusao_pesquisa_e_filtro(self):
+        def conferir(origem, ok, falta):
+            self.assertEqual(self.app.indicador_origem.get(), str(origem))
+            self.assertEqual(self.app.indicador_ok.get(), str(ok))
+            self.assertEqual(self.app.indicador_falta.get(), str(falta))
+
+        conferir(2, 0, 2)
+        self.app.tree_busca.selection_set("0")
+        self.app.update()
+        self.app.adicionar_e_comparar()
+        conferir(2, 1, 1)
+        self.app.tipo_comparacao.set("Créditos")
+        conferir(2, 0, 1)
+        self.app.busca_var.set("Crédito")
+        self.app.buscar_a1()
+        conferir(1, 0, 1)
+        self.app.mudar_tema("Claro")
+        conferir(1, 0, 1)
+        self.app.busca_var.set("inexistente")
+        self.app.buscar_a1()
+        conferir(0, 0, 0)
+        self.app.mostrar_todos()
+        self.app.tipo_comparacao.set("Todos")
+        conferir(2, 1, 1)
+
     def test_teclado_seleciona_registro_e_confirma_pesquisa_com_enter(self):
         tree = self.app.tree_busca
         tree.focus_force()
