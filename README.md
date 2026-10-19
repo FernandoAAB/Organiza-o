@@ -57,8 +57,8 @@ Clique na mensagem de status para ler seu conteúdo completo.
 Duplo clique adiciona apenas o registro clicado: cabeçalhos e áreas vazias não
 adicionam a seleção anterior. Limpar a seleção também limpa o outro painel.
 
-As capturas da tela inicial e da Lista A2 mostram esse layout. As capturas de
-pesquisa e créditos são anteriores à reorganização. As tabelas mantêm as colunas
+Todas as capturas abaixo mostram o aplicativo atual, incluindo pesquisa e
+filtro de créditos. As tabelas mantêm as colunas
 aprovadas, sem a coluna **Tipo**, e **Registro** é dimensionado pelo conteúdo.
 Use a barra horizontal para ler linhas longas por inteiro e arraste a divisória
 central para ampliar um dos painéis.
@@ -90,10 +90,10 @@ e o tipo selecionado. A sequência **Nº** recomeça em 1 e **Linha A1** mantém
 
 ![Filtro de créditos com três registros, um encontrado e dois faltando](docs/images/creditos.png)
 
-### Referências anteriores
+### Arquivos de referência
 
-A [captura anterior da interface](Interface.png) e o [diagrama original](Diagrama.png)
-foram preservados como referência histórica.
+[Interface.png](Interface.png) mostra a interface atual. O [diagrama original](Diagrama.png)
+é uma referência histórica da organização do projeto, não uma captura do aplicativo.
 
 ## Executar
 
@@ -108,6 +108,31 @@ uv run --frozen python main.py
 O aplicativo cria `a1.txt`, `a2.txt` e a pasta `No/` no diretório de execução.
 Mantenha esse diretório ao reiniciar para acessar os mesmos dados. Esses arquivos
 são locais e ignorados pelo Git; faça cópias de segurança dos registros importantes.
+
+## Atualizar a cópia no computador
+
+Uma atualização no GitHub não substitui o programa já salvo no computador. A versão
+atual tem os cartões **Registros A1**, **Conferidos** e **Faltando no A2**, além das
+duas tabelas lado a lado. [Veja a captura atual](Interface.png).
+
+Se você clonou o projeto com Git, feche o programa e execute na pasta do projeto:
+
+```sh
+git pull --ff-only
+uv sync --frozen
+uv run --frozen python main.py
+```
+
+Se baixou um ZIP, [baixe a branch main novamente](https://github.com/FernandoAAB/Organiza-o/archive/refs/heads/main.zip)
+e extraia em uma pasta nova. Copie `a1.txt`, `a2.txt` e a pasta `No/` da instalação
+anterior para essa pasta, mantendo os originais como cópia de segurança. Execute
+os comandos de instalação e inicialização acima, sem o comando `git pull`.
+Abra o `main.py` da pasta nova; um atalho para a pasta anterior continuará abrindo
+a versão anterior. As dependências atuais incluem Pillow para desenhar os ícones.
+
+Se você usa um `.exe`, baixar o `main.py` não altera esse executável. Este repositório
+contém o código-fonte; um executável antigo precisa ser substituído por uma nova
+compilação, ou você pode executar o código atualizado como descrito acima.
 
 ## Uso e comparação
 
