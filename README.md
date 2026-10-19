@@ -22,12 +22,22 @@ As contagens ficam na mesma linha dos títulos, alinhadas à direita.
 e só é habilitado com uma seleção. **Atualizar** e **Relatório** ficam no rodapé
 da conferência. O filtro **Todos / Débitos / Créditos** fica no mesmo rodapé,
 à esquerda dos botões. Os dois rodapés têm margens menores e botões de 32 pixels,
-deixando mais altura para os registros sem reduzir a fonte ou a altura das linhas.
+deixando mais altura para os registros. As linhas têm 36 pixels, mantendo o tamanho
+da fonte e o espaço necessário para a leitura.
 Os cartões e as instruções repetidas foram substituídos por resumos em texto.
 Os seletores de tema e cor ficam recolhidos no botão **Aparência**.
 A situação aparece antes do registro, ficando visível mesmo em linhas longas.
 Na conferência, registros **OK** ficam em verde e **FALTA NO A2** em vermelho,
 tanto no tema claro quanto no escuro.
+O tema escuro usa fundos em azul profundo e o claro mantém os painéis brancos.
+A seleção da conferência preserva o verde e o vermelho sobre um fundo azul
+adequado a cada tema; linhas selecionadas no A1 e na Lista A2 usam texto branco.
+O botão de inclusão fica neutro enquanto não houver seleção.
+
+As três tabelas exibem a coluna **Valor**, alinhada à direita, antes de **Registro**.
+Ela mostra o valor brasileiro e o marcador D/C, como `3.814,88 C`, e fica vazia em
+linhas sem valor marcado com D/C. Essa apresentação não altera o registro original, os
+arquivos, a pesquisa ou as regras de comparação.
 
 As barras de rolagem aparecem apenas quando há conteúdo fora da área visível.
 O cabeçalho aproveita melhor a altura da janela, e o filtro da Lista A2 se
@@ -42,14 +52,16 @@ a coluna **Tipo**, e **Registro** é dimensionado pelo conteúdo.
 Use a barra horizontal para ler linhas longas por inteiro e arraste a divisória
 central para ampliar um dos painéis.
 
-![Tela dividida com A1 à esquerda e comparação de oito lançamentos à direita](docs/images/tela-inicial.png)
+![Tema escuro com Aparência expandida e coluna Valor nos dois painéis](docs/images/tela-inicial.png)
+
+![Tema claro com seleção colorida e coluna Valor nos dois painéis](docs/images/tema-claro.png)
 
 ### Lista A2
 
 Mostra os registros escolhidos, mantendo a referência original do A1. Permite
 filtrar, remover e exportar a seleção.
 
-![Lista A2 com quatro registros selecionados e suas linhas originais](docs/images/lista-a2.png)
+![Lista A2 no tema claro com três registros, valores e linhas originais](docs/images/lista-a2.png)
 
 ### Pesquisa compartilhada
 
