@@ -26,8 +26,15 @@ A situação aparece antes do registro, ficando visível mesmo em linhas longas.
 Na conferência, registros **OK** ficam em verde e **FALTA NO A2** em vermelho,
 tanto no tema claro quanto no escuro.
 
-A captura da tela inicial abaixo mostra esse layout. As demais capturas são
-anteriores à reorganização. As tabelas têm linhas e cabeçalhos espaçados, sem
+As barras de rolagem aparecem apenas quando há conteúdo fora da área visível.
+O cabeçalho aproveita melhor a altura da janela, e o filtro da Lista A2 se
+expande com a largura disponível. A janela inicial considera o tamanho da tela;
+mensagens longas no rodapé quebram linha para continuar legíveis.
+Duplo clique adiciona apenas o registro clicado: cabeçalhos e áreas vazias não
+adicionam a seleção anterior. Limpar a seleção também limpa o outro painel.
+
+As capturas da tela inicial e da Lista A2 mostram esse layout. As capturas de
+pesquisa e créditos são anteriores à reorganização. As tabelas têm linhas e cabeçalhos espaçados, sem
 a coluna **Tipo**, e **Registro** é dimensionado pelo conteúdo.
 Use a barra horizontal para ler linhas longas por inteiro e arraste a divisória
 central para ampliar um dos painéis.
@@ -142,3 +149,8 @@ O arquivo de exemplo do commit `5ac63f7` contém 98 registros sem datas explíci
 
 O relatório trata o conteúdo dos registros como texto, inclusive caracteres
 como `<`, `>` e `&`. A impressão depende do navegador e da impressora disponível.
+
+Para executar os testes, use `.venv/bin/python -m unittest discover -s tests -v`.
+Os testes da interface precisam de uma sessão gráfica; no Linux sem `DISPLAY`,
+eles são indicados como ignorados. Com sessão gráfica, a suíte verifica cliques,
+seleção, rolagem, mensagens e redimensionamento, além da comparação dos registros.

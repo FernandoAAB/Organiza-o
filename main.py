@@ -363,15 +363,19 @@ class App(ctk.CTk):
         self._sincronizando_selecao = False
 
         self.title("Sistema de Busca e Ordenação")
-        self.geometry("1360x820")
-        self.minsize(1100, 650)
+        largura = max(960, min(1360, self._reverse_window_scaling(self.winfo_screenwidth()) - 40))
+        altura = max(560, min(820, self._reverse_window_scaling(self.winfo_screenheight()) - 100))
+        self.geometry(f"{largura}x{altura}")
+        self.minsize(960, 560)
         self.configure(fg_color=c("bg"))
 
         self._montar_cabecalho()
 
         self.status = tk.StringVar(value="Pronto.")
-        ctk.CTkLabel(self, textvariable=self.status, anchor="w", text_color=c("cinza"),
-                     font=(FONTE, 12)).pack(side="bottom", fill="x", padx=18, pady=(0, 10))
+        self.label_status = ctk.CTkLabel(self, textvariable=self.status, anchor="w",
+                                        justify="left", text_color=c("cinza"), font=(FONTE, 12))
+        self.label_status.pack(side="bottom", fill="x", padx=18, pady=(0, 10))
+        self.label_status.bind("<Configure>", self.ajustar_status)
 
         self.abas = ctk.CTkTabview(
             self, corner_radius=14, fg_color=c("painel"),
@@ -398,6 +402,11 @@ class App(ctk.CTk):
             messagebox.showerror("Erro ao acessar arquivos", str(valor), parent=self)
         else:
             super().report_callback_exception(exc, valor, traceback)
+
+    def ajustar_status(self, evento):
+        largura = max(1, self.label_status._reverse_widget_scaling(self.label_status.winfo_width()))
+        if self.label_status.cget("wraplength") != largura:
+            self.label_status.configure(wraplength=largura)
 
     #  componentes reutilizáveis 
     def botao(self, pai, texto, comando, primario=False, perigo=False, largura=170, altura=46):
@@ -435,7 +444,16 @@ class App(ctk.CTk):
         tree.column("texto", minwidth=140)
         sb = ctk.CTkScrollbar(frame, command=tree.yview)
         horizontal = ctk.CTkScrollbar(frame, orientation="horizontal", command=tree.xview)
-        tree.configure(yscrollcommand=sb.set, xscrollcommand=horizontal.set)
+        def atualizar_barra(barra, inicio, fim):
+            barra.set(inicio, fim)
+            necessaria = float(inicio) > 0 or float(fim) < 1
+            if necessaria and not barra.winfo_manager():
+                barra.grid()
+            elif not necessaria and barra.winfo_manager():
+                barra.grid_remove()
+
+        tree.configure(yscrollcommand=lambda inicio, fim: atualizar_barra(sb, inicio, fim),
+                       xscrollcommand=lambda inicio, fim: atualizar_barra(horizontal, inicio, fim))
         frame.grid_rowconfigure(0, weight=1)
         frame.grid_columnconfigure(0, weight=1)
         tree.grid(row=0, column=0, sticky="nsew")
@@ -524,7 +542,7 @@ class App(ctk.CTk):
     #  aba 1: buscar no A1 
     def _montar_aba_busca(self):
         topo = ctk.CTkFrame(self.aba_busca, fg_color="transparent")
-        topo.pack(fill="x", padx=12, pady=(12, 20))
+        topo.pack(fill="x", padx=12, pady=(12, 12))
         self.busca_var = tk.StringVar()
         ctk.CTkLabel(topo, text="Pesquisar", font=(FONTE, 14),
                      text_color=c("cinza")).pack(side="left", padx=(0, 12))
@@ -534,7 +552,7 @@ class App(ctk.CTk):
         entrada.focus_set()
         self.botao(topo, "Buscar", self.buscar_a1, largura=110).pack(side="left", padx=10)
         self.botao(topo, "Limpar", self.mostrar_todos, largura=90).pack(side="left")
-        self.divisao = tk.PanedWindow(self.aba_busca, orient="horizontal", sashwidth=18,
+        self.divisao = tk.PanedWindow(self.aba_busca, orient="horizontal", sashwidth=12,
                                      bd=0, bg=cm("bg", self.modo), opaqueresize=True)
         self.divisao.pack(fill="both", expand=True)
         self.painel_busca = ctk.CTkFrame(self.divisao, bg_color=c("bg"), fg_color=c("painel"), corner_radius=8)
@@ -542,10 +560,10 @@ class App(ctk.CTk):
         self.divisao.add(self.painel_busca, minsize=380, stretch="always", width=600)
         self.divisao.add(self.aba_deb, minsize=440, stretch="always")
         self._divisao_posicionada = False
-        self.divisao.bind("<Map>", self.posicionar_divisao)
+        self.divisao.bind("<Configure>", self.posicionar_divisao)
         for painel in (self.painel_busca, self.aba_deb):
             painel.grid_columnconfigure(0, weight=1)
-            painel.grid_rowconfigure(0, minsize=96)
+            painel.grid_rowconfigure(0, minsize=88)
             painel.grid_rowconfigure(1, weight=1)
             painel.grid_rowconfigure(2, minsize=64)
         cabecalho = ctk.CTkFrame(self.painel_busca, fg_color="transparent")
@@ -570,7 +588,7 @@ class App(ctk.CTk):
                                           primario=True, largura=180, altura=40)
         self.botao_adicionar.pack(side="right")
         self.botao_adicionar.configure(state="disabled")
-        self.tree_busca.bind("<Double-1>", lambda e: self.adicionar_e_comparar())
+        self.tree_busca.bind("<Double-1>", self.adicionar_por_duplo_clique)
         self.tree_busca.bind("<<TreeviewSelect>>", self.atualizar_selecao_origem)
 
     def atualizar_selecao_origem(self, evento=None):
@@ -581,6 +599,13 @@ class App(ctk.CTk):
         self.sincronizar_selecao(self.tree_busca, self.tree_deb)
 
     def posicionar_divisao(self, evento):
+        for painel, minimo in ((self.painel_busca, 380), (self.aba_deb, 440)):
+            largura = round(painel._apply_widget_scaling(minimo))
+            if int(self.divisao.panecget(painel, "minsize")) != largura:
+                self.divisao.paneconfigure(painel, minsize=largura)
+            altura = round(painel._apply_widget_scaling(88))
+            if painel.grid_rowconfigure(0)["minsize"] != altura:
+                painel.grid_rowconfigure(0, minsize=altura)
         if not self._divisao_posicionada:
             self._divisao_posicionada = True
             self.after_idle(lambda: self.divisao.sash_place(0, int(self.divisao.winfo_width() * 0.45), 0))
@@ -611,8 +636,6 @@ class App(ctk.CTk):
         if self._sincronizando_selecao:
             return
         numeros = {origem.set(iid, "linha") for iid in origem.selection()}
-        if not numeros:
-            return
         selecao = tuple(iid for iid in destino.get_children() if destino.set(iid, "linha") in numeros)
         if destino.selection() != selecao:
             self._sincronizando_selecao = True
@@ -627,6 +650,15 @@ class App(ctk.CTk):
 
     def adicionar_e_comparar(self):
         self.adicionar_selecionados(comparar=True)
+
+    def adicionar_por_duplo_clique(self, evento):
+        if self.tree_busca.identify_region(evento.x, evento.y) != "cell":
+            return
+        item = self.tree_busca.identify_row(evento.y)
+        if item:
+            self.tree_busca.selection_set(item)
+            self.adicionar_e_comparar()
+            return "break"
 
     def adicionar_selecionados(self, comparar=False):
         sel = self.tree_busca.selection()
@@ -674,12 +706,16 @@ class App(ctk.CTk):
     #  aba 2: lista A2 
     def _montar_aba_a2(self):
         topo = ctk.CTkFrame(self.aba_a2, fg_color="transparent")
-        topo.pack(fill="x", padx=12, pady=(10, 18))
+        topo.pack(fill="x", padx=12, pady=(10, 12))
+        topo.grid_columnconfigure(1, weight=1)
         self.filtro_a2 = tk.StringVar()
         self.filtro_a2.trace_add("write", lambda *a: self.atualizar_a2())
-        self.campo(topo, self.filtro_a2, "Filtrar lista...").pack(side="left")
-        self.botao(topo, "Exportar N.txt", self.exportar, largura=170).pack(side="right")
-        self.botao(topo, "Remover", self.remover_a2, perigo=True, largura=140).pack(side="right", padx=10)
+        ctk.CTkLabel(topo, text="Filtrar", font=(FONTE, 14),
+                     text_color=c("cinza")).grid(row=0, column=0, padx=(0, 12))
+        self.campo(topo, self.filtro_a2, "Filtrar lista...").grid(row=0, column=1, sticky="ew")
+        self.botao(topo, "Remover", self.remover_a2, perigo=True, largura=140).grid(
+            row=0, column=2, padx=10)
+        self.botao(topo, "Exportar N.txt", self.exportar, largura=170).grid(row=0, column=3)
 
         frame, self.tree_a2 = self._tabela(
             self.aba_a2, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro")], [48, 90, 0])
