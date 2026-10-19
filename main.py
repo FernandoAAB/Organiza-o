@@ -517,8 +517,8 @@ class App(ctk.CTk):
         estilizar_tabelas(self.modo, normal)
         self.tree_busca.tag_configure("ja", foreground=cm("cinza", self.modo))
         self.tree_busca.tag_configure("novo", foreground=cm("texto", self.modo))
-        self.tree_deb.tag_configure("falta", foreground=cm("texto", self.modo))
-        self.tree_deb.tag_configure("ok", foreground=cm("cinza", self.modo))
+        self.tree_deb.tag_configure("falta", foreground=cm("vermelho", self.modo))
+        self.tree_deb.tag_configure("ok", foreground=cm("verde", self.modo))
         self.divisao.configure(bg=cm("bg", self.modo))
 
     #  aba 1: buscar no A1 

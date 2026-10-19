@@ -23,7 +23,8 @@ da conferência. O filtro **Todos / Débitos / Créditos** permanece junto ao t�
 Os cartões e as instruções repetidas foram substituídos por resumos em texto.
 Os seletores de tema e cor ficam recolhidos no botão **Aparência**.
 A situação aparece antes do registro, ficando visível mesmo em linhas longas.
-Registros já conferidos ficam em tom discreto; os pendentes mantêm o texto normal.
+Na conferência, registros **OK** ficam em verde e **FALTA NO A2** em vermelho,
+tanto no tema claro quanto no escuro.
 
 A captura da tela inicial abaixo mostra esse layout. As demais capturas são
 anteriores à reorganização. As tabelas têm linhas e cabeçalhos espaçados, sem
