@@ -10,6 +10,7 @@ from html import escape
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from tkinter import ttk, messagebox
+from tkinter import font as tkfont
 
 import customtkinter as ctk  # pip install customtkinter
 
@@ -173,7 +174,7 @@ def obter_destino_ordenado():
 def extrair_lancamento(texto):
     """Retorna (D/C, valor) do primeiro lançamento em formato brasileiro."""
     encontrado = re.search(
-        r"(?<![0-9.,+\-])([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]+)"
+        r"(?<![0-9.,+\-])[+\-]?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]+)"
         r"(,[0-9]{1,2})?\s*([DC])\b", texto.strip().upper()
     )
     if encontrado is None:
@@ -186,6 +187,43 @@ def extrair_lancamento(texto):
 def extrair_valor_debito(texto):
     lancamento = extrair_lancamento(texto)
     return lancamento[1] if lancamento is not None and lancamento[0] == "D" else None
+
+
+def referencias_no_destino(origem, destino):
+    """Valida a referência e o texto, tolerando diferenças de espaçamento."""
+    textos = {numero: " ".join(texto.split()) for numero, texto in origem}
+    conferidos = set()
+    for item in destino:
+        referencia = re.fullmatch(r"\[(\d+)\]\s*(.*)", item)
+        if referencia is not None:
+            numero = int(referencia[1])
+            if textos.get(numero) == " ".join(referencia[2].split()):
+                conferidos.add(numero)
+    return conferidos
+
+
+def carregar_lancamentos_origem():
+    """Ignora saldos e resumos do extrato, mantendo as linhas originais."""
+    origem = carregar_origem_numerada()
+    extrato = any(texto.upper() == "LANÇAMENTOS" for _, texto in origem)
+    secao = None
+    resultado = []
+    for numero, texto in origem:
+        titulo = texto.upper()
+        if extrato:
+            if titulo in ("LANÇAMENTOS", "LANÇAMENTOS FUTUROS", "RESUMO"):
+                secao = titulo
+            if secao not in ("LANÇAMENTOS", "LANÇAMENTOS FUTUROS"):
+                continue
+            if not re.match(r"^\d{2}/\d{2}/\d{4}\s", texto):
+                continue
+        if re.match(r"^(?:\d{2}/\d{2}/\d{4}\s+)?SALDO "
+                    r"(?:DO DIA|ANTERIOR|BLOQUEADO ANTERIOR)(?:\s|$)", titulo):
+            continue
+        valor = extrair_lancamento(texto)
+        if valor is not None:
+            resultado.append((numero, texto, valor))
+    return resultado
 
 
 def corresponde(termo, texto):
@@ -210,35 +248,29 @@ def corresponde(termo, texto):
 def calcular_lancamentos(tipo=None, termo=""):
     """Compara por (D/C, valor), preservando a referência e as ocorrências."""
     lancamentos_a2 = Counter()
-    itens_a2 = Counter(carregar_linhas(ARQUIVO_DESTINO))
-    origem = [(numero, texto, extrair_lancamento(texto))
-              for numero, texto in carregar_origem_numerada()]
-    origem = [(numero, texto, valor) for numero, texto, valor in origem
-              if valor is not None and (tipo is None or valor[0] == tipo)]
-    # Reserve primeiro os registros enviados diretamente do A1. Um valor igual
-    # em uma linha anterior não deve consumir a seleção de outra linha.
-    conferidos = set()
-    for numero, texto, valor in origem:
-        item = f"[{numero}] {texto}"
-        if valor is not None and itens_a2[item] > 0:
-            conferidos.add(numero)
-            itens_a2[item] -= 1
-    for item, quantidade in itens_a2.items():
-        valor = extrair_lancamento(extrair_texto_registro(item))
+    itens_a2 = carregar_linhas(ARQUIVO_DESTINO)
+    origem = carregar_lancamentos_origem()
+    conferidos = referencias_no_destino([(n, texto) for n, texto, _ in origem], itens_a2)
+    # Uma referência inválida ou repetida não pode conferir outra linha apenas
+    # por ter o mesmo valor. A comparação por valor atende só itens sem referência.
+    for item in itens_a2:
+        if re.match(r"^\[\d+\]", item):
+            continue
+        valor = extrair_lancamento(item)
         if valor is not None:
-            lancamentos_a2[valor] += quantidade
+            lancamentos_a2[valor] += 1
 
     resultado = []
     for numero, texto, valor in origem:
-        if valor is None:
-            continue
         ok = numero in conferidos or lancamentos_a2[valor] > 0
         if ok and numero not in conferidos:
             lancamentos_a2[valor] -= 1
         resultado.append((numero, texto, ok))
     # A busca acontece após a conferência completa, para não redistribuir
     # ocorrências de mesmo valor quando apenas parte da lista está visível.
-    resultado = [(n, texto, ok) for n, texto, ok in resultado if corresponde(termo, texto)]
+    resultado = [(n, texto, ok) for n, texto, ok in resultado
+                 if (tipo is None or extrair_lancamento(texto)[0] == tipo)
+                 and corresponde(termo, texto)]
     return resultado, len(resultado), sum(not ok for _, _, ok in resultado)
 
 
@@ -251,14 +283,13 @@ def gerar_relatorio_html(tipo=None, termo=""):
     categoria = {None: "Débitos e Créditos", "D": "Débitos", "C": "Créditos"}[tipo]
     linhas = ""
     for ordem, (numero, texto, ok) in enumerate(resultado, start=1):
-        natureza = "Débito" if extrair_lancamento(texto)[0] == "D" else "Crédito"
         texto = escape(texto)
         if ok:
             linhas += (f'<tr><td>{ordem}</td><td style="text-align:center;">{numero}</td><td>{texto}</td>'
-                       f'<td>{natureza}</td><td style="text-align:center;"><span class="ok">OK</span></td></tr>')
+                       f'<td style="text-align:center;"><span class="ok">OK</span></td></tr>')
         else:
             linhas += (f'<tr style="color:red;font-weight:bold;"><td>{ordem}</td><td style="text-align:center;">{numero}</td>'
-                       f'<td>{texto}</td><td>{natureza}</td><td style="text-align:center;"><span class="falta">FALTA NO A2</span></td></tr>')
+                       f'<td>{texto}</td><td style="text-align:center;"><span class="falta">FALTA NO A2</span></td></tr>')
 
     html = f"""<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8">
@@ -267,7 +298,8 @@ def gerar_relatorio_html(tipo=None, termo=""):
 body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
 h2, p {{ text-align: center; }}
 table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-th, td {{ border: 1px solid #ccc; padding: 8px 12px; font-size: 14px; }}
+th, td {{ border: 1px solid #ccc; padding: 10px 12px; font-size: 14px; line-height: 1.5; }}
+td:nth-child(3) {{ white-space: pre-wrap; overflow-wrap: anywhere; }}
 th {{ background-color: #f4f4f4; }}
 .ok {{ color: green; font-weight: bold; }}
 .falta {{ color: red; font-weight: bold; }}
@@ -277,7 +309,7 @@ th {{ background-color: #f4f4f4; }}
 <p>Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
 <p>Pesquisa: {escape(termo.strip()) or 'Todos os registros'}</p>
 <table><thead><tr>
-<th>Nº</th><th>Linha A1</th><th>Registro</th><th>Tipo</th><th>Situação</th>
+<th>Nº</th><th>Linha A1</th><th>Registro</th><th>Situação</th>
 </tr></thead><tbody>{linhas}</tbody></table>
 <p><b>Lançamentos no A1:</b> {total} | <b>Faltando no A2:</b> {faltando}</p>
 <div class="nao-imprimir" style="text-align:center;margin-top:30px;">
@@ -303,7 +335,7 @@ def estilizar_tabelas(modo, acento):
     st.theme_use("clam")
     st.configure("Treeview", background=cm("painel", modo),
                  fieldbackground=cm("painel", modo), foreground=cm("texto", modo),
-                 rowheight=38, borderwidth=0, font=(FONTE, 12))
+                 rowheight=40, borderwidth=0, font=(FONTE, 12))
     st.configure("Treeview.Heading", background=cm("bg", modo),
                  foreground=cm("cabecalho", modo), relief="flat", borderwidth=0,
                  padding=(8, 10), font=(FONTE, 11, "bold"))
@@ -315,11 +347,14 @@ def estilizar_tabelas(modo, acento):
 
 class App(ctk.CTk):
     def __init__(self):
+        global FONTE
         # Sem a fonte de formas, o fallback por círculos deixa sobras nas
         # bordas dos controles. Polígonos dispensam essa fonte e evitam as sobras.
         if ctk.DrawEngine.preferred_drawing_method == "circle_shapes":
             ctk.DrawEngine.preferred_drawing_method = "polygon_shapes"
         super().__init__()
+        if FONTE not in tkfont.families(self):
+            FONTE = tkfont.nametofont("TkDefaultFont", root=self).actual("family")
         self.modo, self.acento = carregar_config()
         ctk.set_appearance_mode("dark" if self.modo == "Escuro" else "light")
         self.primarios = []  # botões que usam a cor de destaque
@@ -395,20 +430,26 @@ class App(ctk.CTk):
         for (cid, titulo), larg in zip(colunas, larguras):
             alin = "w" if cid == "texto" else "center"
             tree.heading(cid, text=titulo, anchor=alin)
-            tree.column(cid, width=larg or 300, stretch=(larg == 0), anchor=alin)
+            tree.column(cid, width=larg or 300, minwidth=larg or 140,
+                        stretch=(larg == 0), anchor=alin)
         tree.column("texto", minwidth=140)
-        tree.bind("<Configure>", lambda evento: tree.column(
-            "texto", width=max(140, evento.width - 4 - sum(
-                tree.column(cid, "width") for cid in tree["columns"] if cid != "texto"))))
         sb = ctk.CTkScrollbar(frame, command=tree.yview)
         horizontal = ctk.CTkScrollbar(frame, orientation="horizontal", command=tree.xview)
         tree.configure(yscrollcommand=sb.set, xscrollcommand=horizontal.set)
         frame.grid_rowconfigure(0, weight=1)
         frame.grid_columnconfigure(0, weight=1)
         tree.grid(row=0, column=0, sticky="nsew")
-        sb.grid(row=0, column=1, sticky="ns", padx=(4, 0))
-        horizontal.grid(row=1, column=0, sticky="ew")
+        sb.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+        horizontal.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         return frame, tree
+
+    @staticmethod
+    def ajustar_largura_registro(tree):
+        """Mantém o registro inteiro acessível pela rolagem horizontal."""
+        fonte = tkfont.Font(root=tree, font=ttk.Style(tree).lookup("Treeview", "font"))
+        largura = max((fonte.measure(tree.set(iid, "texto")) + 32
+                       for iid in tree.get_children()), default=140)
+        tree.column("texto", width=max(140, largura), minwidth=max(140, largura))
 
     #  cabeçalho com seletor de tema 
     def _montar_cabecalho(self):
@@ -417,8 +458,12 @@ class App(ctk.CTk):
         ctk.CTkLabel(cab, text="Busca e Ordenação", text_color=c("texto"),
                      font=(FONTE, 24, "bold")).pack(side="left")
 
+        self.botao(cab, "Aparência", self.alternar_aparencia,
+                   largura=120, altura=36).pack(side="right")
+        self.painel_aparencia = ctk.CTkFrame(self, fg_color="transparent")
+
         self.opt_acento = ctk.CTkOptionMenu(
-            cab, values=list(ACENTOS), command=self.mudar_acento, width=140, height=42,
+            self.painel_aparencia, values=list(ACENTOS), command=self.mudar_acento, width=140, height=42,
             corner_radius=10, font=(FONTE, 14), dropdown_font=(FONTE, 14),
             fg_color=c("campo"), button_color=c("campo_hover"),
             button_hover_color=c("campo_hover"), text_color=c("texto"),
@@ -426,18 +471,24 @@ class App(ctk.CTk):
             dropdown_hover_color=c("campo"))
         self.opt_acento.set(self.acento)
         self.opt_acento.pack(side="right")
-        ctk.CTkLabel(cab, text="Cor:", text_color=c("cinza"),
+        ctk.CTkLabel(self.painel_aparencia, text="Cor:", text_color=c("cinza"),
                      font=(FONTE, 13)).pack(side="right", padx=(18, 6))
 
         self.seg_tema = ctk.CTkSegmentedButton(
-            cab, values=["Escuro", "Claro"], command=self.mudar_tema, height=42,
+            self.painel_aparencia, values=["Escuro", "Claro"], command=self.mudar_tema, height=42,
             corner_radius=10, font=(FONTE, 14, "bold"), fg_color=c("campo"),
             unselected_color=c("campo"), unselected_hover_color=c("campo_hover"),
             text_color=("#111827", "#ffffff"))
         self.seg_tema.set(self.modo)
         self.seg_tema.pack(side="right")
-        ctk.CTkLabel(cab, text="Tema:", text_color=c("cinza"),
+        ctk.CTkLabel(self.painel_aparencia, text="Tema:", text_color=c("cinza"),
                      font=(FONTE, 13)).pack(side="right", padx=(18, 6))
+
+    def alternar_aparencia(self):
+        if self.painel_aparencia.winfo_manager():
+            self.painel_aparencia.pack_forget()
+        else:
+            self.painel_aparencia.pack(before=self.abas, fill="x", padx=20, pady=(12, 0))
 
     def mudar_tema(self, modo):
         self.modo = modo
@@ -466,28 +517,24 @@ class App(ctk.CTk):
         estilizar_tabelas(self.modo, normal)
         self.tree_busca.tag_configure("ja", foreground=cm("cinza", self.modo))
         self.tree_busca.tag_configure("novo", foreground=cm("texto", self.modo))
-        self.tree_deb.tag_configure("falta", foreground=cm("vermelho", self.modo))
-        self.tree_deb.tag_configure("ok", foreground=cm("verde", self.modo))
+        self.tree_deb.tag_configure("falta", foreground=cm("texto", self.modo))
+        self.tree_deb.tag_configure("ok", foreground=cm("cinza", self.modo))
         self.divisao.configure(bg=cm("bg", self.modo))
 
     #  aba 1: buscar no A1 
     def _montar_aba_busca(self):
         topo = ctk.CTkFrame(self.aba_busca, fg_color="transparent")
-        topo.pack(fill="x", pady=(6, 12))
+        topo.pack(fill="x", padx=12, pady=(12, 20))
         self.busca_var = tk.StringVar()
-        entrada = self.campo(topo, self.busca_var, "Buscar nos dois lados: texto, data ou valor...")
+        ctk.CTkLabel(topo, text="Pesquisar", font=(FONTE, 14),
+                     text_color=c("cinza")).pack(side="left", padx=(0, 12))
+        entrada = self.campo(topo, self.busca_var, "Texto, data ou valor")
         entrada.pack(side="left", fill="x", expand=True)
         entrada.bind("<Return>", lambda e: self.buscar_a1())
         entrada.focus_set()
-        self.botao(topo, "Buscar", self.buscar_a1, primario=True, largura=130).pack(side="left", padx=10)
-        self.botao(topo, "Mostrar todos", self.mostrar_todos, largura=150).pack(side="left", padx=(0, 10))
-        self.botao(topo, "Adicionar ao A2 →", self.adicionar_e_comparar,
-                   primario=True, largura=200).pack(side="right")
-
-        ctk.CTkLabel(self.aba_busca,
-                    text="Pesquise uma vez para conferir os dois lados. Selecione no A1 e adicione ao A2; a situação será atualizada ao lado.",
-                    text_color=c("cinza"), font=(FONTE, 13)).pack(anchor="w", pady=(0, 6))
-        self.divisao = tk.PanedWindow(self.aba_busca, orient="horizontal", sashwidth=10,
+        self.botao(topo, "Buscar", self.buscar_a1, largura=110).pack(side="left", padx=10)
+        self.botao(topo, "Limpar", self.mostrar_todos, largura=90).pack(side="left")
+        self.divisao = tk.PanedWindow(self.aba_busca, orient="horizontal", sashwidth=18,
                                      bd=0, bg=cm("bg", self.modo), opaqueresize=True)
         self.divisao.pack(fill="both", expand=True)
         self.painel_busca = ctk.CTkFrame(self.divisao, bg_color=c("bg"), fg_color=c("painel"), corner_radius=8)
@@ -496,17 +543,42 @@ class App(ctk.CTk):
         self.divisao.add(self.aba_deb, minsize=440, stretch="always")
         self._divisao_posicionada = False
         self.divisao.bind("<Map>", self.posicionar_divisao)
-        ctk.CTkLabel(self.painel_busca, text="A1 — registros de origem",
-                    font=(FONTE, 18, "bold"), text_color=c("texto")).pack(anchor="w", padx=8, pady=(10, 4))
-        ctk.CTkLabel(self.painel_busca, text="Duplo clique adiciona ao A2 • Ctrl/Shift seleciona vários",
-                    text_color=c("cinza"), font=(FONTE, 12)).pack(anchor="w", padx=8, pady=(0, 10))
+        for painel in (self.painel_busca, self.aba_deb):
+            painel.grid_columnconfigure(0, weight=1)
+            painel.grid_rowconfigure(0, minsize=96)
+            painel.grid_rowconfigure(1, weight=1)
+            painel.grid_rowconfigure(2, minsize=64)
+        cabecalho = ctk.CTkFrame(self.painel_busca, fg_color="transparent")
+        cabecalho.grid(row=0, column=0, sticky="nsew", padx=16, pady=(14, 10))
+        ctk.CTkLabel(cabecalho, text="Registros do A1",
+                    font=(FONTE, 18, "bold"), text_color=c("texto")).pack(anchor="w")
+        self.resumo_origem = tk.StringVar()
+        ctk.CTkLabel(cabecalho, textvariable=self.resumo_origem,
+                    text_color=c("cinza"), font=(FONTE, 12)).pack(anchor="w", pady=(6, 0))
 
         frame, self.tree_busca = self._tabela(
             self.painel_busca, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro"), ("situacao", "No A2")],
-            [40, 85, 0, 80])
-        frame.pack(fill="both", expand=True)
+            [48, 90, 0, 90])
+        frame.grid(row=1, column=0, sticky="nsew", padx=16)
+        self.tree_busca.configure(displaycolumns=("ordem", "linha", "situacao", "texto"))
+        rodape = ctk.CTkFrame(self.painel_busca, fg_color="transparent")
+        rodape.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
+        self.resumo_selecao = tk.StringVar(value="Nenhum selecionado")
+        ctk.CTkLabel(rodape, textvariable=self.resumo_selecao,
+                     text_color=c("cinza"), font=(FONTE, 12)).pack(side="left")
+        self.botao_adicionar = self.botao(rodape, "Adicionar ao A2", self.adicionar_e_comparar,
+                                          primario=True, largura=180, altura=40)
+        self.botao_adicionar.pack(side="right")
+        self.botao_adicionar.configure(state="disabled")
         self.tree_busca.bind("<Double-1>", lambda e: self.adicionar_e_comparar())
-        self.tree_busca.bind("<<TreeviewSelect>>", lambda e: self.sincronizar_selecao(self.tree_busca, self.tree_deb))
+        self.tree_busca.bind("<<TreeviewSelect>>", self.atualizar_selecao_origem)
+
+    def atualizar_selecao_origem(self, evento=None):
+        quantidade = len(self.tree_busca.selection())
+        self.resumo_selecao.set("1 selecionado" if quantidade == 1 else
+                               f"{quantidade} selecionados" if quantidade else "Nenhum selecionado")
+        self.botao_adicionar.configure(state="normal" if quantidade else "disabled")
+        self.sincronizar_selecao(self.tree_busca, self.tree_deb)
 
     def posicionar_divisao(self, evento):
         if not self._divisao_posicionada:
@@ -518,13 +590,17 @@ class App(ctk.CTk):
         termo = self.termo_busca.lower()
         self.tree_busca.delete(*self.tree_busca.get_children())
         self.resultados = []
-        destino = set(carregar_linhas(ARQUIVO_DESTINO))
-        self.resultados = [(n, t) for n, t in carregar_origem_numerada() if corresponde(termo, t)]
+        origem = carregar_origem_numerada()
+        conferidos = referencias_no_destino(origem, carregar_linhas(ARQUIVO_DESTINO))
+        self.resultados = [(n, t) for n, t in origem if corresponde(termo, t)]
         for i, (n, t) in enumerate(self.resultados):
-            ja = f"[{n}] {t}" in destino
+            ja = n in conferidos
             self.tree_busca.insert("", "end", iid=str(i),
                                    values=(i + 1, n, t, "✓ no A2" if ja else ""),
                                    tags=("ja" if ja else "novo",))
+        self.ajustar_largura_registro(self.tree_busca)
+        self.resumo_origem.set(f"{len(self.resultados)} registros disponíveis")
+        self.atualizar_selecao_origem()
         if termo:
             self.status.set(f"{len(self.resultados)} resultado(s) para '{termo}'.")
         else:
@@ -564,12 +640,13 @@ class App(ctk.CTk):
             self.status.set("O A1 foi alterado. Confira os registros e selecione novamente.")
             return
         destino = carregar_linhas(ARQUIVO_DESTINO)
+        conferidos = referencias_no_destino(list(origem_atual.items()), destino)
         adicionados = 0
         numeros = set()
         for numero, texto in selecionados_origem:
             numeros.add(numero)
             item = f"[{numero}] {texto}"
-            if item not in destino:
+            if numero not in conferidos:
                 destino.append(item)
                 adicionados += 1
         destino.sort(key=extrair_numero)
@@ -592,12 +669,12 @@ class App(ctk.CTk):
                 self.tree_deb.see(selecionados[0])
             self.status.set(f"{adicionados} adicionado(s) ao A2; "
                             f"{len(selecionados)} lançamento(s) selecionado(s) na comparação. "
-                            "Registros sem D/C não entram na comparação.")
+                            "Saldos, resumos e registros sem D/C não entram na comparação.")
 
     #  aba 2: lista A2 
     def _montar_aba_a2(self):
         topo = ctk.CTkFrame(self.aba_a2, fg_color="transparent")
-        topo.pack(fill="x", pady=(6, 12))
+        topo.pack(fill="x", padx=12, pady=(10, 18))
         self.filtro_a2 = tk.StringVar()
         self.filtro_a2.trace_add("write", lambda *a: self.atualizar_a2())
         self.campo(topo, self.filtro_a2, "Filtrar lista...").pack(side="left")
@@ -605,8 +682,8 @@ class App(ctk.CTk):
         self.botao(topo, "Remover", self.remover_a2, perigo=True, largura=140).pack(side="right", padx=10)
 
         frame, self.tree_a2 = self._tabela(
-            self.aba_a2, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro")], [60, 90, 0])
-        frame.pack(fill="both", expand=True)
+            self.aba_a2, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro")], [48, 90, 0])
+        frame.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
     def atualizar_a2(self):
         self.tree_a2.delete(*self.tree_a2.get_children())
@@ -620,6 +697,7 @@ class App(ctk.CTk):
             total += 1
             numero = extrair_numero(item) if re.match(r"^\[\d+\]", item) else "—"
             self.tree_a2.insert("", "end", iid=str(indice), values=(total, numero, texto))
+        self.ajustar_largura_registro(self.tree_a2)
         if self.abas.get() == "Lista A2":
             self.status.set(f"A2: {total} registro(s) exibido(s).")
 
@@ -649,39 +727,39 @@ class App(ctk.CTk):
         self.status.set(f"✓ Exportado para {os.path.abspath(caminho)}")
 
     #  aba 3: comparação de débitos e créditos
-    def _card(self, pai, titulo, var, cor):
-        card = ctk.CTkFrame(pai, fg_color=c("campo"), corner_radius=8)
-        card.pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(card, text=titulo, text_color=c("cinza"),
-                     font=(FONTE, 12)).pack(side="left", padx=(10, 6), pady=4)
-        ctk.CTkLabel(card, textvariable=var, text_color=cor,
-                     font=(FONTE, 18, "bold")).pack(side="left", padx=(0, 10), pady=4)
-
     def _montar_aba_debitos(self):
         cabecalho = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
-        cabecalho.pack(fill="x", padx=8, pady=(8, 6))
-        ctk.CTkLabel(cabecalho, text="A1 × A2 — conferência",
+        cabecalho.grid(row=0, column=0, sticky="nsew", padx=16, pady=(14, 10))
+        titulo = ctk.CTkFrame(cabecalho, fg_color="transparent")
+        titulo.pack(fill="x")
+        ctk.CTkLabel(titulo, text="Conferência A1 × A2",
                     font=(FONTE, 18, "bold"), text_color=c("texto")).pack(side="left")
-        self.botao(cabecalho, "Relatório", self.imprimir_relatorio,
-                   largura=100, altura=32).pack(side="right")
-        self.botao(cabecalho, "Atualizar", self.atualizar_tudo,
-                   largura=100, altura=32).pack(side="right", padx=6)
-        topo = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
-        topo.pack(fill="x", padx=8, pady=(0, 8))
         self.tipo_comparacao = tk.StringVar(value="Todos")
         self.tipo_comparacao.trace_add("write", lambda *a: self.atualizar_debitos())
-        ctk.CTkOptionMenu(topo, values=["Todos", "Débitos", "Créditos"],
-                         variable=self.tipo_comparacao, width=120, height=36).pack(side="left", padx=(0, 10))
+        ctk.CTkOptionMenu(titulo, values=["Todos", "Débitos", "Créditos"],
+                         variable=self.tipo_comparacao, width=110, height=30,
+                         fg_color=c("campo"), button_color=c("campo_hover"),
+                         button_hover_color=c("campo_hover"), text_color=c("texto"),
+                         dropdown_fg_color=c("painel"), dropdown_text_color=c("texto"),
+                         dropdown_hover_color=c("campo")).pack(side="right")
         self.var_total = tk.StringVar(value="0")
         self.var_falta = tk.StringVar(value="0")
-        self._card(topo, "Exibidos", self.var_total, c("texto"))
-        self._card(topo, "Faltando no A2", self.var_falta, c("vermelho"))
+        self.resumo_conferencia = tk.StringVar()
+        ctk.CTkLabel(cabecalho, textvariable=self.resumo_conferencia,
+                     text_color=c("cinza"), font=(FONTE, 12)).pack(anchor="w", pady=(6, 0))
 
         frame, self.tree_deb = self._tabela(
             self.aba_deb, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro"),
-                           ("tipo", "Tipo"), ("situacao", "Situação")],
-            [40, 85, 0, 75, 125])
-        frame.pack(fill="both", expand=True)
+                           ("situacao", "Situação")],
+            [48, 90, 0, 130])
+        frame.grid(row=1, column=0, sticky="nsew", padx=16)
+        self.tree_deb.configure(displaycolumns=("ordem", "linha", "situacao", "texto"))
+        rodape = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
+        rodape.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
+        self.botao(rodape, "Relatório", self.imprimir_relatorio,
+                   largura=110, altura=40).pack(side="right")
+        self.botao(rodape, "Atualizar", self.atualizar_tudo,
+                   largura=110, altura=40).pack(side="right", padx=(0, 10))
         self.tree_deb.bind("<<TreeviewSelect>>", lambda e: self.sincronizar_selecao(self.tree_deb, self.tree_busca))
 
     def tipo_selecionado(self):
@@ -695,16 +773,17 @@ class App(ctk.CTk):
         self.tree_deb.delete(*self.tree_deb.get_children())
         resultado, total, faltando = calcular_lancamentos(self.tipo_selecionado(), self.termo_busca)
         for i, (numero, texto, ok) in enumerate(resultado):
-            natureza = "Débito" if extrair_lancamento(texto)[0] == "D" else "Crédito"
             situacao = "OK" if ok else "FALTA NO A2"
             tags = ["ok" if ok else "falta"]
             self.tree_deb.insert("", "end", iid=str(i),
-                                 values=(i + 1, numero, texto, natureza, situacao), tags=tuple(tags))
+                                 values=(i + 1, numero, texto, situacao), tags=tuple(tags))
+        self.ajustar_largura_registro(self.tree_deb)
         self.var_total.set(str(total))
         self.var_falta.set(str(faltando))
+        self.resumo_conferencia.set(f"{total} exibidos · {faltando} faltando no A2")
         self.sincronizar_selecao(self.tree_busca, self.tree_deb)
         if self.abas.get() == "Buscar e comparar":
-            self.status.set(f"A1: {len(self.resultados)} registro(s) • Comparação: {total} lançamento(s) • Faltando: {faltando}")
+            self.status.set(f"A1: {len(self.resultados)} registros | Conferência: {total} lançamentos | Faltando: {faltando}")
 
     def atualizar_tudo(self):
         self.buscar_a1()

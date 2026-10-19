@@ -11,15 +11,25 @@ A aparência das fontes pode variar conforme o sistema operacional.
 ### Tela inicial — Buscar e comparar
 
 Reúne os registros do **A1 à esquerda** e a **conferência A1 × A2 à direita**.
-Uma única pesquisa filtra os dois painéis. Ao selecionar e usar **Adicionar ao A2 →**,
+Uma única pesquisa filtra os dois painéis. Ao selecionar e usar **Adicionar ao A2**,
 a situação é atualizada ao lado, mantendo a pesquisa. Arraste a divisória central
 para ajustar o espaço de cada painel.
 
-Na conferência à direita, **Todos**, **Exibidos** e **Faltando no A2** ficam na
-mesma linha, em uma faixa compacta. Os botões **Atualizar** e **Relatório** ficam
-ao lado do título, deixando mais espaço vertical para os registros da tabela.
-Esse layout está implementado no aplicativo; as imagens abaixo foram capturadas
-da versão atualizada.
+A barra superior reúne apenas **Pesquisar**, **Buscar** e **Limpar**. As duas
+tabelas ficam alinhadas, com títulos curtos e um resumo dos registros exibidos.
+**Adicionar ao A2** fica no rodapé do A1, ao lado da quantidade selecionada,
+e só é habilitado com uma seleção. **Atualizar** e **Relatório** ficam no rodapé
+da conferência. O filtro **Todos / Débitos / Créditos** permanece junto ao título.
+Os cartões e as instruções repetidas foram substituídos por resumos em texto.
+Os seletores de tema e cor ficam recolhidos no botão **Aparência**.
+A situação aparece antes do registro, ficando visível mesmo em linhas longas.
+Registros já conferidos ficam em tom discreto; os pendentes mantêm o texto normal.
+
+A captura da tela inicial abaixo mostra esse layout. As demais capturas são
+anteriores à reorganização. As tabelas têm linhas e cabeçalhos espaçados, sem
+a coluna **Tipo**, e **Registro** é dimensionado pelo conteúdo.
+Use a barra horizontal para ler linhas longas por inteiro e arraste a divisória
+central para ampliar um dos painéis.
 
 ![Tela dividida com A1 à esquerda e comparação de oito lançamentos à direita](docs/images/tela-inicial.png)
 
@@ -34,7 +44,7 @@ filtrar, remover e exportar a seleção.
 
 Pesquisar `32000` encontra os registros de `320,00` nos dois lados. Neste exemplo,
 o débito já está no A2 e o crédito ainda falta: o mesmo valor com tipos diferentes
-é conferido separadamente. **Mostrar todos** limpa a pesquisa dos dois painéis.
+é conferido separadamente. **Limpar** limpa a pesquisa dos dois painéis.
 
 ![Pesquisa por 32000 nos dois painéis, com um débito conferido e um crédito faltando](docs/images/comparacao.png)
 
@@ -74,10 +84,12 @@ são locais e ignorados pelo Git; faça cópias de segurança dos registros impo
    A pesquisa filtra simultaneamente o A1 e a comparação, preservando a ordem original.
    Os filtros de tipo e o relatório usam a última pesquisa confirmada; digitar
    um novo termo sem pressionar Enter ou **Buscar** não altera os resultados.
-3. Selecione os registros à esquerda e clique em **Adicionar ao A2 →**, ou use
+3. Selecione os registros à esquerda e clique em **Adicionar ao A2**, ou use
    duplo clique. A indicação no A1 e a situação na direita são atualizadas sem
    trocar de aba. A seleção localiza a mesma linha no painel ao lado; Ctrl/Shift
-   permite escolher vários registros. A comparação contém apenas registros com D/C.
+   permite escolher vários registros. A comparação contém lançamentos com D/C;
+   saldos e o resumo do extrato ficam fora da contagem. Lançamentos futuros
+   continuam disponíveis para conferência e mantêm a linha original do A1.
    Se o A1 for editado em outro programa e a linha escolhida mudar, a inclusão
    é interrompida e a lista atualizada para você selecionar novamente.
 4. Confira as pendências à direita. **Todos / Débitos / Créditos** filtra o tipo
@@ -98,12 +110,18 @@ Os marcadores D/C identificam a saída e a entrada; o sinal negativo não é exi
 O formato original com valor colado no histórico (`ENVIO TED320,00 D`) também é aceito.
 Valores como
 `1.453,30` e `1453,3` são equivalentes. Os registros adicionados diretamente do A1
-têm prioridade pela linha e pelo texto originais. As demais ocorrências no A2
-são comparadas por valor, na ordem das linhas do A1. Cada ocorrência confere
+têm prioridade pela linha e pelo texto originais, tolerando diferenças de espaços
+e tabulações. Um item com referência `[linha]` só confere essa linha e o mesmo
+texto: referências antigas, inexistentes ou repetidas não conferem outra linha
+de mesmo valor. Itens do A2 **sem referência** são comparados por valor, na ordem
+das linhas do A1. Cada ocorrência confere
 apenas um lançamento do mesmo tipo: um crédito nunca confere um débito.
 Dois créditos ou débitos de mesmo valor exigem duas ocorrências do respectivo tipo no A2.
-**Situação** mostra `OK` ou `FALTA NO A2`; o valor permanece no registro e
-a coluna **Tipo** distingue débito e crédito. Os contadores mostram quantidades de registros.
+**Situação** mostra `OK` ou `FALTA NO A2`; o valor e o marcador D/C permanecem
+no registro, dispensando uma coluna **Tipo** na tabela e no relatório.
+Valores negativos do extrato, como `-700,00D`, também são reconhecidos;
+a conferência usa o valor absoluto e o marcador D/C.
+Os contadores mostram quantidades de registros.
 Linhas sem valor marcado com D/C, como `0SALDO DIA` no exemplo original,
 continuam disponíveis no A1 e no A2, mas não entram na comparação financeira.
 
