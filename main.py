@@ -458,7 +458,7 @@ class App(ctk.CTk):
         frame.grid_columnconfigure(0, weight=1)
         tree.grid(row=0, column=0, sticky="nsew")
         sb.grid(row=0, column=1, sticky="ns", padx=(8, 0))
-        horizontal.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        horizontal.grid(row=1, column=0, sticky="ew", pady=(4, 0))
         return frame, tree
 
     @staticmethod
@@ -563,16 +563,17 @@ class App(ctk.CTk):
         self.divisao.bind("<Configure>", self.posicionar_divisao)
         for painel in (self.painel_busca, self.aba_deb):
             painel.grid_columnconfigure(0, weight=1)
-            painel.grid_rowconfigure(0, minsize=88)
+            painel.grid_rowconfigure(0, minsize=48)
             painel.grid_rowconfigure(1, weight=1)
-            painel.grid_rowconfigure(2, minsize=64)
+            painel.grid_rowconfigure(2, minsize=44)
         cabecalho = ctk.CTkFrame(self.painel_busca, fg_color="transparent")
-        cabecalho.grid(row=0, column=0, sticky="nsew", padx=16, pady=(14, 10))
+        cabecalho.grid(row=0, column=0, sticky="ew", padx=16, pady=6)
+        cabecalho.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(cabecalho, text="Registros do A1",
-                    font=(FONTE, 18, "bold"), text_color=c("texto")).pack(anchor="w")
+                    font=(FONTE, 18, "bold"), text_color=c("texto")).grid(row=0, column=0, sticky="w")
         self.resumo_origem = tk.StringVar()
         ctk.CTkLabel(cabecalho, textvariable=self.resumo_origem,
-                    text_color=c("cinza"), font=(FONTE, 12)).pack(anchor="w", pady=(6, 0))
+                    text_color=c("cinza"), font=(FONTE, 12)).grid(row=0, column=1, sticky="w", padx=(12, 0))
 
         frame, self.tree_busca = self._tabela(
             self.painel_busca, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro"), ("situacao", "No A2")],
@@ -580,12 +581,12 @@ class App(ctk.CTk):
         frame.grid(row=1, column=0, sticky="nsew", padx=16)
         self.tree_busca.configure(displaycolumns=("ordem", "linha", "situacao", "texto"))
         rodape = ctk.CTkFrame(self.painel_busca, fg_color="transparent")
-        rodape.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
+        rodape.grid(row=2, column=0, sticky="ew", padx=16, pady=6)
         self.resumo_selecao = tk.StringVar(value="Nenhum selecionado")
         ctk.CTkLabel(rodape, textvariable=self.resumo_selecao,
                      text_color=c("cinza"), font=(FONTE, 12)).pack(side="left")
         self.botao_adicionar = self.botao(rodape, "Adicionar ao A2", self.adicionar_e_comparar,
-                                          primario=True, largura=180, altura=40)
+                                          primario=True, largura=180, altura=32)
         self.botao_adicionar.pack(side="right")
         self.botao_adicionar.configure(state="disabled")
         self.tree_busca.bind("<Double-1>", self.adicionar_por_duplo_clique)
@@ -603,7 +604,7 @@ class App(ctk.CTk):
             largura = round(painel._apply_widget_scaling(minimo))
             if int(self.divisao.panecget(painel, "minsize")) != largura:
                 self.divisao.paneconfigure(painel, minsize=largura)
-            altura = round(painel._apply_widget_scaling(88))
+            altura = round(painel._apply_widget_scaling(48))
             if painel.grid_rowconfigure(0)["minsize"] != altura:
                 painel.grid_rowconfigure(0, minsize=altura)
         if not self._divisao_posicionada:
@@ -765,24 +766,25 @@ class App(ctk.CTk):
     #  aba 3: comparação de débitos e créditos
     def _montar_aba_debitos(self):
         cabecalho = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
-        cabecalho.grid(row=0, column=0, sticky="nsew", padx=16, pady=(14, 10))
-        titulo = ctk.CTkFrame(cabecalho, fg_color="transparent")
-        titulo.pack(fill="x")
-        ctk.CTkLabel(titulo, text="Conferência A1 × A2",
-                    font=(FONTE, 18, "bold"), text_color=c("texto")).pack(side="left")
+        cabecalho.grid(row=0, column=0, sticky="ew", padx=16, pady=6)
+        cabecalho.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(cabecalho, text="Conferência A1 × A2",
+                    font=(FONTE, 18, "bold"), text_color=c("texto")).grid(row=0, column=0, sticky="w")
+        rodape = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
+        rodape.grid(row=2, column=0, sticky="ew", padx=16, pady=6)
         self.tipo_comparacao = tk.StringVar(value="Todos")
         self.tipo_comparacao.trace_add("write", lambda *a: self.atualizar_debitos())
-        ctk.CTkOptionMenu(titulo, values=["Todos", "Débitos", "Créditos"],
+        ctk.CTkOptionMenu(rodape, values=["Todos", "Débitos", "Créditos"],
                          variable=self.tipo_comparacao, width=110, height=30,
                          fg_color=c("campo"), button_color=c("campo_hover"),
                          button_hover_color=c("campo_hover"), text_color=c("texto"),
                          dropdown_fg_color=c("painel"), dropdown_text_color=c("texto"),
-                         dropdown_hover_color=c("campo")).pack(side="right")
+                         dropdown_hover_color=c("campo")).pack(side="left")
         self.var_total = tk.StringVar(value="0")
         self.var_falta = tk.StringVar(value="0")
         self.resumo_conferencia = tk.StringVar()
         ctk.CTkLabel(cabecalho, textvariable=self.resumo_conferencia,
-                     text_color=c("cinza"), font=(FONTE, 12)).pack(anchor="w", pady=(6, 0))
+                     text_color=c("cinza"), font=(FONTE, 12)).grid(row=0, column=1, sticky="w", padx=(12, 0))
 
         frame, self.tree_deb = self._tabela(
             self.aba_deb, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro"),
@@ -790,12 +792,10 @@ class App(ctk.CTk):
             [48, 90, 0, 130])
         frame.grid(row=1, column=0, sticky="nsew", padx=16)
         self.tree_deb.configure(displaycolumns=("ordem", "linha", "situacao", "texto"))
-        rodape = ctk.CTkFrame(self.aba_deb, fg_color="transparent")
-        rodape.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
         self.botao(rodape, "Relatório", self.imprimir_relatorio,
-                   largura=110, altura=40).pack(side="right")
+                   largura=110, altura=32).pack(side="right")
         self.botao(rodape, "Atualizar", self.atualizar_tudo,
-                   largura=110, altura=40).pack(side="right", padx=(0, 10))
+                   largura=110, altura=32).pack(side="right", padx=(0, 10))
         self.tree_deb.bind("<<TreeviewSelect>>", lambda e: self.sincronizar_selecao(self.tree_deb, self.tree_busca))
 
     def tipo_selecionado(self):

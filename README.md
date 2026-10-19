@@ -16,10 +16,12 @@ a situação é atualizada ao lado, mantendo a pesquisa. Arraste a divisória ce
 para ajustar o espaço de cada painel.
 
 A barra superior reúne apenas **Pesquisar**, **Buscar** e **Limpar**. As duas
-tabelas ficam alinhadas, com títulos curtos e um resumo dos registros exibidos.
+tabelas ficam alinhadas, com as contagens na mesma linha dos títulos.
 **Adicionar ao A2** fica no rodapé do A1, ao lado da quantidade selecionada,
 e só é habilitado com uma seleção. **Atualizar** e **Relatório** ficam no rodapé
-da conferência. O filtro **Todos / Débitos / Créditos** permanece junto ao título.
+da conferência. O filtro **Todos / Débitos / Créditos** fica no mesmo rodapé,
+à esquerda dos botões. Os dois rodapés têm margens menores e botões de 32 pixels,
+deixando mais altura para os registros sem reduzir a fonte ou a altura das linhas.
 Os cartões e as instruções repetidas foram substituídos por resumos em texto.
 Os seletores de tema e cor ficam recolhidos no botão **Aparência**.
 A situação aparece antes do registro, ficando visível mesmo em linhas longas.
