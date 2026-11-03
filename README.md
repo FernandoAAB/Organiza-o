@@ -82,6 +82,35 @@ o débito já está no A2 e o crédito ainda falta: o mesmo valor com tipos dife
 
 ![Pesquisa por 32000 nos dois painéis, com um débito conferido e um crédito faltando](docs/images/comparacao.png)
 
+### Capturar documento pelo telefone
+
+A aba **Capturar documento** recebe fotos de notas fiscais, cupons, recibos e
+extratos pelo telefone, sem enviar a imagem para a internet. Clique em
+**Iniciar captura** no computador e abra no telefone o endereço exibido (os dois
+dispositivos precisam estar na mesma rede Wi-Fi). Se o QR Code estiver
+disponível, ele também pode ser escaneado.
+
+Depois do envio, o OCR local preenche uma revisão com descrição, data, valor e
+tipo (`D` para débito ou `C` para crédito). Revise e edite os campos e clique em
+**Verificar no A1 e adicionar ao A2**. O programa só inclui automaticamente
+quando encontra uma única linha do A1 com a mesma data, valor e tipo D/C.
+Duplicidades e documentos sem correspondência permanecem para revisão. A linha
+incluída recebe uma cor própria na conferência **A1 × A2** durante a sessão.
+Ao escolher uma foto no celular, o envio começa automaticamente; não é
+necessário clicar em outro botão. O formulário aceita várias fotos na mesma
+remessa e mantém uma fila de revisão. As imagens ficam somente em memória durante
+o OCR e não são salvas no computador. A validação automática inclui no `a2.txt`
+somente a linha correspondente do `a1.txt`; a conferência continua sendo feita
+exclusivamente entre esses dois arquivos.
+
+O projeto inclui uma cópia portátil do Tesseract em `Tesseract-OCR/`, com o
+modelo de português, e a usa automaticamente. Assim, não é necessário instalar
+o Tesseract no Windows. Se essa pasta não estiver presente, o aplicativo tenta
+usar uma instalação disponível no sistema; se o OCR não estiver disponível ou
+não reconhecer a imagem, os campos continuam editáveis para preenchimento
+manual. O servidor aceita somente imagens de até 15 MB e deve ser parado depois
+do uso. O recurso não interpreta contratos nem substitui a conferência humana.
+
 ### Filtro de créditos
 
 O filtro da direita permite conferir somente créditos ou somente débitos; o A1
@@ -168,14 +197,11 @@ Um débito é identificado por um valor brasileiro seguido de `D`, por exemplo
 Os marcadores D/C identificam a saída e a entrada; o sinal negativo não é exigido.
 O formato original com valor colado no histórico (`ENVIO TED320,00 D`) também é aceito.
 Valores como
-`1.453,30` e `1453,3` são equivalentes. Os registros adicionados diretamente do A1
-têm prioridade pela linha e pelo texto originais, tolerando diferenças de espaços
-e tabulações. Um item com referência `[linha]` só confere essa linha e o mesmo
-texto: referências antigas, inexistentes ou repetidas não conferem outra linha
-de mesmo valor. Itens do A2 **sem referência** são comparados por valor, na ordem
-das linhas do A1. Cada ocorrência confere
-apenas um lançamento do mesmo tipo: um crédito nunca confere um débito.
-Dois créditos ou débitos de mesmo valor exigem duas ocorrências do respectivo tipo no A2.
+`1.453,30` e `1453,3` são equivalentes para a pesquisa e para a leitura do
+lançamento, mas a conferência A1 × A2 exige a linha inteira igual. O prefixo
+`[linha]` do A2 é ignorado nessa comparação; espaços e tabulações diferentes são
+tolerados. Cada ocorrência de uma linha do A1 consome uma ocorrência igual no A2.
+Assim, valores iguais com descrições, datas ou tipos diferentes não conferem.
 **Situação** mostra `OK` ou `FALTA NO A2`; o valor e o marcador D/C permanecem
 no registro, dispensando uma coluna **Tipo** na tabela e no relatório.
 Valores negativos do extrato, como `-700,00D`, também são reconhecidos;

@@ -1,8 +1,11 @@
 import json
 import os
 import re
+import socket
+import threading
 import webbrowser
 import tkinter as tk
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from collections import Counter
 from datetime import datetime
 from decimal import Decimal
@@ -11,7 +14,15 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from tkinter import ttk, messagebox
 from tkinter import font as tkfont
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
+try:
+    import qrcode
+except ImportError:
+    qrcode = None
 
 import customtkinter as ctk  # pip install customtkinter
 
@@ -19,6 +30,7 @@ ARQUIVO_ORIGEM = "a1.txt"
 ARQUIVO_DESTINO = "a2.txt"
 PASTA_REG = "No"
 CONFIG = os.path.join(PASTA_REG, "config.json")
+TESSERACT_PORTATIL = Path(__file__).resolve().parent / "Tesseract-OCR"
 
 
 # TEMAS  (cada cor: (claro, escuro))
@@ -39,6 +51,7 @@ TEMAS = {
     "verde": ("#008b66", "#00d6a0"),
     "vermelho": ("#e11d48", "#ff416c"),
     "marcado": ("#fef08a", "#3b2d54"),
+    "captura": ("#ca8a04", "#facc15"),
     "perigo": ("#ffe4e6", "#4c1d24"),
     "perigo_hover": ("#fecdd3", "#6b2129"),
 }
@@ -156,6 +169,211 @@ def salvar_linhas(nome_arquivo, linhas):
             temporario.unlink(missing_ok=True)
 
 
+def interpretar_texto_documento(texto):
+    """Extrai campos financeiros simples sem inventar valores ausentes."""
+    valores = re.findall(
+        r"(?<![\d.,])(?:R\$\s*)?([+-]?\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+,\d{2})(?![\d.,])",
+        texto,
+        flags=re.IGNORECASE,
+    )
+    valor = ""
+    if valores:
+        valor = valores[-1].replace(".", "").replace(",", ".").lstrip("+")
+    datas = re.findall(r"\b\d{2}/\d{2}/\d{2,4}\b", texto)
+    tipo = "D" if re.search(r"\b(?:d[eé]bito|pagamento|compra|total a pagar)\b", texto, re.I) else ""
+    if not tipo and re.search(r"\b(?:cr[eé]dito|recebimento|entrada)\b", texto, re.I):
+        tipo = "C"
+    linhas = [linha.strip() for linha in texto.splitlines() if linha.strip()]
+    descricao = linhas[0][:120] if linhas else ""
+    return {
+        "descricao": descricao,
+        "data": datas[0] if datas else "",
+        "valor": valor,
+        "tipo": tipo,
+    }
+
+
+def correspondencias_campos(data, valor_texto, tipo, origem=None, destino=None):
+    """Localiza ocorrências livres usando a mesma busca tolerante do A1."""
+    if not data or not valor_texto or tipo not in ("D", "C"):
+        return []
+    origem = carregar_origem_numerada() if origem is None else origem
+    destino = carregar_linhas(ARQUIVO_DESTINO) if destino is None else destino
+    conferidos = referencias_no_destino(origem, destino)
+    candidatos = []
+    data_digitos = re.sub(r"\D", "", data)
+    for numero, registro in origem:
+        lancamento = extrair_lancamento(registro)
+        datas_registro = re.findall(r"\b\d{2}[./-]\d{2}[./-]\d{2,4}\b", registro)
+        data_encontrada = any(re.sub(r"\D", "", item) == data_digitos
+                              for item in datas_registro)
+        if (numero not in conferidos and lancamento is not None
+                and lancamento[0] == tipo
+                and data_encontrada
+                and corresponde(valor_texto, registro)):
+            candidatos.append((numero, registro))
+    return candidatos
+
+
+def correspondencias_documento(texto, origem=None, destino=None):
+    """Localiza ocorrências do documento no A1 por data, valor e tipo."""
+    campos = interpretar_texto_documento(texto)
+    return correspondencias_campos(campos["data"], campos["valor"], campos["tipo"],
+                                   origem, destino)
+
+
+def executar_ocr(caminho):
+    if pytesseract is None:
+        return "", "OCR local não instalado; preencha os campos manualmente."
+    executavel = TESSERACT_PORTATIL / "tesseract.exe"
+    tessdata = TESSERACT_PORTATIL / "tessdata"
+    configuracao = ""
+    if executavel.is_file():
+        pytesseract.pytesseract.tesseract_cmd = str(executavel)
+        os.environ["TESSDATA_PREFIX"] = str(tessdata)
+    try:
+        texto = pytesseract.image_to_string(Image.open(caminho), lang="por",
+                                            config=configuracao)
+    except (OSError, ValueError, RuntimeError, pytesseract.TesseractNotFoundError,
+            pytesseract.TesseractError) as erro:
+        return "", f"O OCR local não pôde ler a imagem: {erro}"
+    return texto, "" if texto.strip() else "Nenhum texto foi reconhecido; revise os campos manualmente."
+
+
+class _CaptureHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+class _UploadHandler(BaseHTTPRequestHandler):
+    server_version = "OrganizacaoCapture/1.0"
+
+    @staticmethod
+    def pagina_upload(mensagem=""):
+        aviso = f"<p class='aviso'>{escape(mensagem)}</p>" if mensagem else ""
+        return f"""<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capturar documentos</title>
+<style>
+* {{ box-sizing: border-box; }}
+body {{ font-family: system-ui, sans-serif; max-width: 560px; min-height: 100vh;
+  margin: 0 auto; padding: 18px 14px; background: #f3f7fb; color: #102036; }}
+main {{ background: #fbfdff; border: 1px solid #dce6ef; border-radius: 16px;
+  padding: 22px; box-shadow: 0 8px 24px #10203618; }}
+header {{ display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }}
+.marca {{ display: grid; place-items: center; width: 42px; height: 42px;
+  border-radius: 12px; background: #10b981; color: white; font-size: 1.35rem;
+  font-weight: 800; }}
+h1 {{ color: #102036; font-size: 1.35rem; line-height: 1.2; margin: 0; }}
+.subtitulo {{ color: #586b81; font-size: .9rem; margin: 3px 0 0; }}
+form {{ margin-top: 20px; }}
+input[type="file"] {{ width: 100%; padding: 12px; border: 1px dashed #9fb3c7;
+  border-radius: 10px; background: #f5f9fc; color: #344e69; font-size: .98rem; }}
+input[type="file"]:focus-visible {{ outline: 3px solid #10b98155;
+  outline-offset: 2px; border-color: #059669; }}
+button {{ width: 100%; box-sizing: border-box; font-size: 1rem; padding: 12px;
+  margin-top: 12px; border: 0; border-radius: 9px; background: #10b981;
+  color: white; font-weight: 700; cursor: pointer; }}
+button:hover {{ background: #059669; }}
+button:focus-visible {{ outline: 3px solid #10b98166; outline-offset: 2px; }}
+button:active {{ transform: translateY(1px); }}
+.aviso {{ background: #e5f7ef; border: 1px solid #9de3c5; color: #075e46;
+  padding: 11px 12px; border-radius: 10px; }}
+.ajuda {{ color: #586b81; font-size: .95rem; line-height: 1.45; }}
+@media (prefers-color-scheme: dark) {{
+  body {{ background: #06121e; color: #f0f6fc; }}
+  main {{ background: #0b1c2b; border-color: #183143; }}
+  h1 {{ color: #f0f6fc; }}
+  .subtitulo, .ajuda {{ color: #acbfd1; }}
+  input[type="file"] {{ background: #152c3d; border-color: #416076; color: #f0f6fc; }}
+  .aviso {{ background: #123b32; border-color: #167653; color: #b7f5d9; }}
+}}
+</style><body><main>
+<header><div class="marca" aria-hidden="true">+</div><div>
+<h1>Enviar documentos</h1>
+<p class="subtitulo">Captura local pelo telefone</p>
+</div></header>
+<p class="ajuda">Escolha uma ou várias fotos. Depois do envio, esta página
+continua pronta para adicionar mais arquivos.</p>
+{aviso}
+<form method="post" enctype="multipart/form-data">
+<input type="file" name="documento" accept="image/*" capture="environment"
+ multiple required onchange="this.form.submit()">
+<p class="ajuda">Depois de tirar ou escolher a foto, o envio começa
+automaticamente.</p>
+</form>
+</main></body></html>"""
+
+    def do_GET(self):
+        dados = self.pagina_upload().encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(dados)))
+        self.end_headers()
+        self.wfile.write(dados)
+
+    def do_POST(self):
+        try:
+            tamanho = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_error(400, "Tamanho de arquivo inválido")
+            return
+        if tamanho <= 0 or tamanho > 15 * 1024 * 1024:
+            self.send_error(413, "Arquivo vazio ou maior que 15 MB")
+            return
+        corpo = self.rfile.read(tamanho)
+        limite = self.headers.get("Content-Type", "")
+        correspondencia = re.search(r'boundary="?([^";]+)', limite)
+        if correspondencia is None:
+            self.send_error(400, "Envio multipart inválido")
+            return
+        separador = ("--" + correspondencia.group(1)).encode()
+        partes = corpo.split(separador)
+        arquivos = []
+        for parte in partes:
+            if b'name="documento"' not in parte:
+                continue
+            cabecalho, _, conteudo = parte.partition(b"\r\n\r\n")
+            nome = re.search(br'filename="([^"]*)"', cabecalho)
+            if nome is None:
+                continue
+            if conteudo.endswith(b"\r\n"):
+                conteudo = conteudo[:-2]
+            extensao = Path(nome.group(1).decode("utf-8", "ignore")).suffix.lower()
+            if extensao not in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"):
+                self.send_error(415, "Formato de imagem não aceito")
+                return
+            arquivos.append((conteudo, extensao))
+        if not arquivos:
+            self.send_error(400, "Nenhuma imagem foi enviada")
+            return
+        for conteudo, extensao in arquivos:
+            self.server.captura_callback(conteudo, extensao)
+        dados = self.pagina_upload(
+            f"{len(arquivos)} foto(s) recebida(s). Você pode selecionar e enviar mais."
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(dados)))
+        self.end_headers()
+        self.wfile.write(dados)
+
+    def log_message(self, *_):
+        return
+
+
+def endereco_rede_local():
+    conexao = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        conexao.connect(("192.0.2.1", 1))
+        return conexao.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        conexao.close()
+
+
 def extrair_numero(linha):
     try:
         if linha.startswith("["):
@@ -197,7 +415,7 @@ def extrair_valor_debito(texto):
 
 
 def referencias_no_destino(origem, destino):
-    """Valida a referência e o texto, tolerando diferenças de espaçamento."""
+    """Reconhece referências que apontam para a mesma linha do A1."""
     textos = {numero: " ".join(texto.split()) for numero, texto in origem}
     conferidos = set()
     for item in destino:
@@ -207,6 +425,11 @@ def referencias_no_destino(origem, destino):
             if textos.get(numero) == " ".join(referencia[2].split()):
                 conferidos.add(numero)
     return conferidos
+
+
+def texto_a2_sem_referencia(item):
+    referencia = re.fullmatch(r"\[\d+\]\s*(.*)", item)
+    return referencia[1] if referencia is not None else item
 
 
 def carregar_lancamentos_origem():
@@ -253,25 +476,18 @@ def corresponde(termo, texto):
 
 
 def calcular_lancamentos(tipo=None, termo=""):
-    """Compara por (D/C, valor), preservando a referência e as ocorrências."""
-    lancamentos_a2 = Counter()
+    """Confere ocorrências de linhas iguais entre A1 e A2."""
     itens_a2 = carregar_linhas(ARQUIVO_DESTINO)
     origem = carregar_lancamentos_origem()
-    conferidos = referencias_no_destino([(n, texto) for n, texto, _ in origem], itens_a2)
-    # Uma referência inválida ou repetida não pode conferir outra linha apenas
-    # por ter o mesmo valor. A comparação por valor atende só itens sem referência.
-    for item in itens_a2:
-        if re.match(r"^\[\d+\]", item):
-            continue
-        valor = extrair_lancamento(item)
-        if valor is not None:
-            lancamentos_a2[valor] += 1
+    linhas_a2 = Counter(" ".join(texto_a2_sem_referencia(item).split())
+                        for item in itens_a2)
 
     resultado = []
-    for numero, texto, valor in origem:
-        ok = numero in conferidos or lancamentos_a2[valor] > 0
-        if ok and numero not in conferidos:
-            lancamentos_a2[valor] -= 1
+    for numero, texto, _ in origem:
+        chave = " ".join(texto.split())
+        ok = linhas_a2[chave] > 0
+        if ok:
+            linhas_a2[chave] -= 1
         resultado.append((numero, texto, ok))
     # A busca acontece após a conferência completa, para não redistribuir
     # ocorrências de mesmo valor quando apenas parte da lista está visível.
@@ -448,6 +664,11 @@ class App(ctk.CTk):
         self.resultados = []
         self.termo_busca = ""
         self._sincronizando_selecao = False
+        self.servidor_captura = None
+        self.thread_servidor_captura = None
+        self.captura_pendente = None
+        self.capturas_fila = []
+        self.capturas_adicionadas = set()
 
         self.title("Sistema de Busca e Ordenação")
         largura = max(960, min(1360, self._reverse_window_scaling(self.winfo_screenwidth()) - 40))
@@ -483,14 +704,22 @@ class App(ctk.CTk):
         self.abas.pack(fill="both", expand=True, padx=12)
         self.aba_busca = self.abas.add("Buscar e comparar")
         self.aba_a2 = self.abas.add("Lista A2")
+        self.aba_captura = self.abas.add("Capturar documento")
         self.aba_a2.configure(fg_color=c("painel"), border_width=1, border_color=c("borda"), corner_radius=6)
+        self.aba_captura.configure(fg_color=c("painel"), border_width=1, border_color=c("borda"), corner_radius=6)
 
         self._montar_aba_busca()
         self._montar_aba_a2()
+        self._montar_aba_captura()
         self._montar_aba_debitos()
         self.aplicar_tema()
         self.abas.bind("<Configure>", self.ajustar_escala_tabelas, add="+")
         self.atualizar_tudo()
+        self.protocol("WM_DELETE_WINDOW", self.fechar)
+
+    def fechar(self):
+        self.parar_servidor_captura()
+        self.destroy()
 
     def report_callback_exception(self, exc, valor, traceback):
         """Apresenta erros de arquivo sem deixar a ação falhar silenciosamente."""
@@ -587,7 +816,7 @@ class App(ctk.CTk):
                      font=(FONTE, 22, "bold"), height=42).grid(row=0, column=0, padx=(0, 14))
         self.aba_selecionada = tk.StringVar(value="Buscar e comparar")
         self.navegacao = ctk.CTkSegmentedButton(
-            cab, values=["Buscar e comparar", "Lista A2"], variable=self.aba_selecionada,
+            cab, values=["Buscar e comparar", "Lista A2", "Captura"], variable=self.aba_selecionada,
             command=self.trocar_aba, height=32, font=(FONTE, 14, "bold"),
             fg_color=c("campo"), unselected_color=c("campo"),
             unselected_hover_color=c("campo_hover"), text_color=("#111827", "#ffffff"))
@@ -620,7 +849,11 @@ class App(ctk.CTk):
         self.painel_aparencia.grid(row=0, column=3)
 
     def trocar_aba(self, nome):
+        visual = nome
+        if nome == "Captura":
+            nome = "Capturar documento"
         self.abas.set(nome)
+        self.aba_selecionada.set(visual)
         self.atualizar_tudo()
 
     def alternar_aparencia(self):
@@ -628,6 +861,216 @@ class App(ctk.CTk):
             self.painel_aparencia.grid_remove()
         else:
             self.painel_aparencia.grid(row=0, column=3)
+
+    def iniciar_servidor_captura(self):
+        if (self.servidor_captura is not None
+                and self.thread_servidor_captura is not None
+                and self.thread_servidor_captura.is_alive()):
+            self.status.set("A captura já está disponível no endereço mostrado.")
+            return
+        if self.servidor_captura is not None:
+            self.servidor_captura.server_close()
+            self.servidor_captura = None
+            self.thread_servidor_captura = None
+        try:
+            servidor = _CaptureHTTPServer(("0.0.0.0", 0), _UploadHandler)
+        except OSError as erro:
+            self.status.set("Não foi possível iniciar o servidor de captura.")
+            messagebox.showerror("Servidor de captura", str(erro), parent=self)
+            return
+        servidor.captura_callback = lambda conteudo, extensao: self.after(
+            0, self.receber_captura, conteudo, extensao)
+        self.servidor_captura = servidor
+        self.thread_servidor_captura = threading.Thread(
+            target=servidor.serve_forever, daemon=True)
+        self.thread_servidor_captura.start()
+        endereco = f"http://{endereco_rede_local()}:{servidor.server_port}"
+        self.url_captura.set(endereco)
+        self._mostrar_qr(endereco)
+        self.status.set("Servidor local ativo. Abra o endereço no telefone e envie uma foto.")
+
+    def parar_servidor_captura(self):
+        if self.servidor_captura is not None:
+            self.servidor_captura.shutdown()
+            self.servidor_captura.server_close()
+            if self.thread_servidor_captura is not None:
+                self.thread_servidor_captura.join(timeout=2)
+            self.servidor_captura = None
+            self.thread_servidor_captura = None
+            self.url_captura.set("Servidor parado.")
+            self.qr_captura.configure(image="", text="Inicie o servidor para gerar o QR Code.")
+            self.qr_imagem = None
+
+    def _mostrar_qr(self, endereco):
+        if qrcode is None:
+            self.qr_captura.configure(text="QR Code indisponível.\nUse o endereço acima.")
+            return
+        imagem = qrcode.make(endereco).convert("RGB")
+        imagem.thumbnail((220, 220))
+        self.qr_imagem = ImageTk.PhotoImage(imagem, master=self)
+        self.qr_captura.configure(text="", image=self.qr_imagem)
+
+    def receber_captura(self, conteudo, extensao):
+        self.capturas_fila.append((conteudo, extensao))
+        self.atualizar_fila_captura()
+        if self.captura_pendente is not None:
+            self.captura_aviso.set(
+                f"Foto recebida. A foto atual está aguardando revisão; "
+                f"{len(self.capturas_fila)} foto(s) depois dela.")
+            self.status.set(f"Foto recebida; {len(self.capturas_fila)} na fila.")
+            return
+        self.processar_proxima_captura()
+
+    def processar_proxima_captura(self):
+        if self.captura_pendente is not None or not self.capturas_fila:
+            return
+        conteudo, extensao = self.capturas_fila.pop(0)
+        self.atualizar_fila_captura()
+        self.captura_descricao.set("")
+        self.captura_data.set("")
+        self.captura_valor.set("")
+        self.captura_tipo.set("")
+        self.captura_texto.delete("1.0", "end")
+        self.captura_aviso.set("Processando a próxima foto...")
+        temporario = None
+        try:
+            with NamedTemporaryFile(suffix=extensao, delete=False) as arquivo:
+                arquivo.write(conteudo)
+                temporario = arquivo.name
+            texto, aviso = executar_ocr(temporario)
+        finally:
+            if temporario is not None:
+                Path(temporario).unlink(missing_ok=True)
+        campos = interpretar_texto_documento(texto)
+        self.captura_pendente = {"texto": texto}
+        self.atualizar_fila_captura()
+        self.captura_descricao.set(campos["descricao"])
+        self.captura_data.set(campos["data"])
+        self.captura_valor.set(campos["valor"])
+        self.captura_tipo.set(campos["tipo"])
+        self.captura_texto.delete("1.0", "end")
+        self.captura_texto.insert("1.0", texto)
+        self.captura_aviso.set(
+            aviso or "Foto pronta. Confira os campos e verifique no A1.")
+        self.trocar_aba("Captura")
+        self.status.set("Documento recebido para revisão.")
+        self.after_idle(lambda: self.confirmar_captura(automatico=True))
+
+    def confirmar_captura(self, automatico=False):
+        if self.captura_pendente is None:
+            self.status.set("Envie uma imagem antes de confirmar.")
+            return
+        descricao = self.captura_descricao.get().strip()
+        valor = self.captura_valor.get().strip()
+        tipo = self.captura_tipo.get().strip().upper()
+        data = self.captura_data.get().strip()
+        if not descricao or not data or not valor or tipo not in ("D", "C"):
+            mensagem = "Informe descrição, data, valor e tipo D ou C."
+            if automatico:
+                self.captura_aviso.set(f"Validação pendente: {mensagem}")
+                self.status.set("A validação automática precisa de revisão.")
+            else:
+                messagebox.showwarning("Revisão necessária", mensagem, parent=self)
+            return
+        try:
+            numero = Decimal(valor.replace(".", "").replace(",", "."))
+        except (ValueError, ArithmeticError):
+            mensagem = "Informe um valor brasileiro válido."
+            if automatico:
+                self.captura_aviso.set(f"Validação pendente: {mensagem}")
+                self.status.set("A validação automática precisa de revisão.")
+            else:
+                messagebox.showwarning("Valor inválido", mensagem, parent=self)
+            return
+        if data and re.fullmatch(r"\d{2}/\d{2}/\d{2,4}", data) is None:
+            mensagem = "Use o formato DD/MM/AAAA."
+            if automatico:
+                self.captura_aviso.set(f"Validação pendente: {mensagem}")
+                self.status.set("A validação automática precisa de revisão.")
+            else:
+                messagebox.showwarning("Data inválida", mensagem, parent=self)
+            return
+        correspondencias = correspondencias_campos(
+            data, str(numero), tipo)
+        if len(correspondencias) == 0:
+            self.captura_aviso.set(
+                "Nenhuma correspondência exata no A1. O documento permanece para revisão.")
+            self.status.set("Nenhuma correspondência exata encontrada no A1.")
+            return
+        if len(correspondencias) > 1:
+            self.captura_aviso.set(
+                f"{len(correspondencias)} correspondências encontradas no A1. "
+                "Não foi adicionado ao A2.")
+            self.status.set("Há duplicidade no A1; escolha manualmente.")
+            return
+        numero_a1, registro = correspondencias[0]
+        destino = carregar_linhas(ARQUIVO_DESTINO)
+        destino.append(f"[{numero_a1}] {registro}")
+        destino.sort(key=extrair_numero)
+        salvar_linhas(ARQUIVO_DESTINO, destino)
+        self.capturas_adicionadas.add(numero_a1)
+        self.captura_pendente = None
+        self.atualizar_fila_captura()
+        aguardando = len(self.capturas_fila)
+        self.captura_aviso.set(
+            f"Linha A1 {numero_a1} adicionada ao A2 e marcada na conferência. "
+            f"{aguardando} foto(s) aguardando." if aguardando else
+            f"Linha A1 {numero_a1} adicionada ao A2 e marcada na conferência.")
+        self.atualizar_tudo()
+        self.status.set(f"Linha A1 {numero_a1} adicionada ao A2.")
+        self.processar_proxima_captura()
+
+    def _montar_aba_captura(self):
+        self.aba_captura.grid_columnconfigure(0, weight=1)
+        self.aba_captura.grid_columnconfigure(1, weight=1)
+        cabecalho = ctk.CTkFrame(self.aba_captura, fg_color="transparent")
+        cabecalho.grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=(14, 6))
+        ctk.CTkLabel(cabecalho, text="Capturar documento",
+                     font=(FONTE, 18, "bold"), text_color=c("texto")).pack(anchor="w")
+        ctk.CTkLabel(cabecalho, text="Use o telefone na mesma rede Wi-Fi; a imagem é processada neste computador.",
+                     text_color=c("cinza"), font=(FONTE, 12)).pack(anchor="w", pady=(2, 0))
+        esquerda = ctk.CTkFrame(self.aba_captura, fg_color="transparent")
+        esquerda.grid(row=1, column=0, sticky="nsew", padx=(16, 8), pady=6)
+        direita = ctk.CTkFrame(self.aba_captura, fg_color="transparent")
+        direita.grid(row=1, column=1, sticky="nsew", padx=(8, 16), pady=6)
+        self.aba_captura.grid_rowconfigure(1, weight=1)
+        self.url_captura = tk.StringVar(value="Servidor parado.")
+        self.qr_imagem = None
+        self.qr_captura = ctk.CTkLabel(esquerda, text="Inicie o servidor para gerar o QR Code.",
+                                      text_color=c("cinza"), width=240, height=240)
+        self.qr_captura.pack(pady=(8, 12))
+        ctk.CTkLabel(esquerda, textvariable=self.url_captura, wraplength=360,
+                     text_color=c("texto"), font=(FONTE, 13)).pack(fill="x")
+        self.botao(esquerda, "Iniciar captura", self.iniciar_servidor_captura,
+                   primario=True, largura=180).pack(pady=(14, 6))
+        self.botao(esquerda, "Parar servidor", self.parar_servidor_captura,
+                   largura=180).pack()
+        self.captura_aviso = tk.StringVar(value="Nenhum documento recebido.")
+        ctk.CTkLabel(direita, textvariable=self.captura_aviso, wraplength=460,
+                     text_color=c("cinza"), justify="left").pack(anchor="w", pady=(4, 10))
+        self.fila_captura = tk.StringVar(value="Fila: 0 foto(s)")
+        ctk.CTkLabel(direita, textvariable=self.fila_captura,
+                     text_color=c("cinza"), font=(FONTE, 11)).pack(anchor="w", pady=(0, 6))
+        campos = (("Descrição", "captura_descricao"), ("Data", "captura_data"),
+                  ("Valor", "captura_valor"), ("Tipo (D/C)", "captura_tipo"))
+        for titulo, atributo in campos:
+            ctk.CTkLabel(direita, text=titulo, text_color=c("cinza"),
+                         font=(FONTE, 12)).pack(anchor="w", pady=(4, 2))
+            variavel = tk.StringVar()
+            setattr(self, atributo, variavel)
+            self.campo(direita, variavel, titulo).pack(fill="x")
+        ctk.CTkLabel(direita, text="Texto reconhecido", text_color=c("cinza"),
+                     font=(FONTE, 12)).pack(anchor="w", pady=(8, 2))
+        self.captura_texto = tk.Text(direita, height=8, wrap="word",
+                                     bg=cm("campo", self.modo), fg=cm("texto", self.modo),
+                                     insertbackground=cm("texto", self.modo), relief="flat")
+        self.captura_texto.pack(fill="both", expand=True)
+        self.botao(direita, "Verificar no A1 e adicionar ao A2", self.confirmar_captura,
+                   primario=True, largura=250).pack(anchor="e", pady=(10, 4))
+
+    def atualizar_fila_captura(self):
+        pendente = 1 if self.captura_pendente is not None else 0
+        self.fila_captura.set(f"Fila: {pendente + len(self.capturas_fila)} foto(s)")
 
     def mudar_tema(self, modo):
         self.modo = modo
@@ -659,8 +1102,13 @@ class App(ctk.CTk):
         self.tree_busca.tag_configure("novo", foreground=cm("texto", self.modo))
         self.tree_deb.tag_configure("falta", foreground=cm("vermelho", self.modo))
         self.tree_deb.tag_configure("ok", foreground=cm("verde", self.modo))
+        self.tree_deb.tag_configure("captura", foreground=cm("captura", self.modo))
         for tree in (self.tree_busca, self.tree_deb, self.tree_a2):
             tree.tag_configure("alternada", background=cm("alternada", self.modo))
+        if hasattr(self, "captura_texto"):
+            self.captura_texto.configure(
+                bg=cm("campo", self.modo), fg=cm("texto", self.modo),
+                insertbackground=cm("texto", self.modo))
         self.divisao.configure(bg=cm("bg", self.modo))
 
     def ajustar_escala_tabelas(self, evento=None):
@@ -998,7 +1446,8 @@ class App(ctk.CTk):
         resultado, total, faltando = calcular_lancamentos(self.tipo_selecionado(), self.termo_busca)
         for i, (numero, texto, ok) in enumerate(resultado):
             situacao = "OK" if ok else "FALTA NO A2"
-            tags = ["ok" if ok else "falta", "alternada" if i % 2 else "normal"]
+            status_tag = "captura" if numero in self.capturas_adicionadas else ("ok" if ok else "falta")
+            tags = [status_tag, "alternada" if i % 2 else "normal"]
             self.tree_deb.insert("", "end", iid=str(i),
                                  values=(i + 1, numero, texto, situacao, formatar_valor_registro(texto)), tags=tuple(tags))
         self.ajustar_largura_registro(self.tree_deb)

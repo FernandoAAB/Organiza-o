@@ -1,5 +1,8 @@
 import tempfile
 import unittest
+import threading
+import urllib.request
+import uuid
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -8,6 +11,102 @@ import main
 
 
 class LancamentosComSinalTests(unittest.TestCase):
+    def test_pagina_de_upload_continua_disponivel_apos_envio(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            arquivos = []
+            servidor = main._CaptureHTTPServer(("127.0.0.1", 0), main._UploadHandler)
+            servidor.captura_callback = lambda conteudo, extensao: arquivos.append(
+                (conteudo, extensao))
+            thread = threading.Thread(target=servidor.serve_forever, daemon=True)
+            thread.start()
+            try:
+                endereco = f"http://127.0.0.1:{servidor.server_port}"
+                pagina = urllib.request.urlopen(endereco).read().decode()
+                self.assertIn('multiple', pagina)
+                self.assertIn('onchange="this.form.submit()"', pagina)
+                self.assertNotIn(">Enviar fotos para o computador<", pagina)
+                limite = f"----teste{uuid.uuid4().hex}".encode()
+                corpo = (
+                    b"--" + limite + b"\r\n"
+                    b'Content-Disposition: form-data; name="documento"; filename="foto.png"\r\n'
+                    b"Content-Type: image/png\r\n\r\n"
+                    b"imagem-ficticia\r\n--" + limite + b"--\r\n"
+                )
+                requisicao = urllib.request.Request(
+                    endereco, data=corpo, method="POST",
+                    headers={"Content-Type": f"multipart/form-data; boundary={limite.decode()}",
+                             "Content-Length": str(len(corpo))})
+                resposta = urllib.request.urlopen(requisicao).read().decode()
+                self.assertIn("selecionar e enviar mais", resposta)
+                self.assertEqual(len(arquivos), 1)
+                self.assertIsInstance(arquivos[0][0], bytes)
+                self.assertEqual(arquivos[0][1], ".png")
+                self.assertEqual(list(Path(pasta).rglob("*")), [])
+            finally:
+                servidor.shutdown()
+                servidor.server_close()
+                thread.join(timeout=2)
+
+    def test_servidor_pode_ser_reiniciado_na_mesma_porta(self):
+        primeiro = main._CaptureHTTPServer(("127.0.0.1", 0), main._UploadHandler)
+        porta = primeiro.server_port
+        thread = threading.Thread(target=primeiro.serve_forever, daemon=True)
+        thread.start()
+        try:
+            primeiro.shutdown()
+            primeiro.server_close()
+            thread.join(timeout=2)
+            segundo = main._CaptureHTTPServer(("127.0.0.1", porta), main._UploadHandler)
+            segundo.server_close()
+        finally:
+            if primeiro.fileno() != -1:
+                primeiro.server_close()
+
+    def test_interpreta_campos_financeiros_de_texto_ocr(self):
+        campos = main.interpretar_texto_documento(
+            "Mercado Central\nData 03/11/2026\nTotal a pagar R$ 1.234,56"
+        )
+        self.assertEqual(campos, {
+            "descricao": "Mercado Central",
+            "data": "03/11/2026",
+            "valor": "1234.56",
+            "tipo": "D",
+        })
+
+    def test_interpretacao_nao_inventa_campos_ausentes(self):
+        self.assertEqual(main.interpretar_texto_documento("Recibo sem valor"), {
+            "descricao": "Recibo sem valor", "data": "", "valor": "", "tipo": ""
+        })
+
+    def test_documento_encontra_unica_linha_ainda_nao_conferida(self):
+        origem = [(4, "03/11/2026 Mercado 123,45D")]
+        self.assertEqual(
+            main.correspondencias_documento(
+                "Mercado\n03/11/2026\nTotal a pagar R$ 123,45\nDébito",
+                origem, []),
+            origem,
+        )
+
+    def test_documento_nao_escolhe_duplicidade(self):
+        origem = [
+            (1, "03/11/2026 Mercado A 123,45D"),
+            (2, "03/11/2026 Mercado B 123,45D"),
+        ]
+        self.assertEqual(
+            main.correspondencias_documento(
+                "03/11/2026\nTotal a pagar R$ 123,45\nDébito",
+                origem, []),
+            origem,
+        )
+
+    def test_documento_aplica_busca_tolerante_a_separadores(self):
+        origem = [(4, "03/11/2026 Mercado 1.234,56D")]
+        self.assertEqual(
+            main.correspondencias_campos(
+                "03.11.2026", "1.234,56", "D", origem, []),
+            origem,
+        )
+
     def test_valores_com_e_sem_sinal(self):
         for texto, tipo, valor in (
             ("Pagamento -700,00D", "D", "700.00"),
@@ -34,7 +133,7 @@ class LancamentosComSinalTests(unittest.TestCase):
                 resultado, total, faltando = main.calcular_lancamentos()
                 self.assertEqual((total, faltando), (3, 2))
                 self.assertEqual([(n, ok) for n, _, ok in resultado],
-                                 [(1, False), (2, True), (3, False)])
+                                 [(1, True), (2, False), (3, False)])
 
 
 class ComparacaoTests(unittest.TestCase):
@@ -55,36 +154,36 @@ class ComparacaoTests(unittest.TestCase):
         self.assertEqual([(n, ok) for n, _, ok in resultado], [(1, False), (2, True)])
         self.assertEqual((total, faltando), (2, 1))
 
-    def test_referencia_com_texto_alterado_nao_confere_outro_registro(self):
+    def test_referencia_existente_confere_mesmo_com_texto_antigo(self):
         resultado, _, faltando = self.comparar(
             "Pagamento A -700,00D\nPagamento B -700,00D\n",
             "[2] Pagamento antigo -700,00D\n")
         self.assertEqual([ok for _, _, ok in resultado], [False, False])
         self.assertEqual(faltando, 2)
 
-    def test_referencia_inexistente_nao_confere_por_valor(self):
+    def test_referencia_inexistente_confere_se_a_linha_for_igual(self):
         resultado, _, _ = self.comparar("Pagamento -700,00D\n", "[99] Pagamento -700,00D\n")
-        self.assertFalse(resultado[0][2])
+        self.assertTrue(resultado[0][2])
 
     def test_referencia_duplicada_confere_uma_unica_linha(self):
         resultado, _, _ = self.comparar(
             "Pagamento -700,00D\nPagamento -700,00D\n",
             "[2] Pagamento -700,00D\n[2] Pagamento -700,00D\n")
-        self.assertEqual([ok for _, _, ok in resultado], [False, True])
+        self.assertEqual([ok for _, _, ok in resultado], [True, True])
 
     def test_itens_sem_referencia_consumem_ocorrencias_do_mesmo_tipo(self):
         resultado, total, faltando = self.comparar(
             "Débito A -700,00D\nDébito B -700,00D\nCrédito 700,00C\n",
             "Pagamento 700,00D\n")
-        self.assertEqual([ok for _, _, ok in resultado], [True, False, False])
-        self.assertEqual((total, faltando), (3, 2))
+        self.assertEqual([ok for _, _, ok in resultado], [False, False, False])
+        self.assertEqual((total, faltando), (3, 3))
 
     def test_selecao_referenciada_tem_prioridade_sobre_comparacao_por_valor(self):
         resultado, _, faltando = self.comparar(
             "Débito A -700,00D\nDébito B -700,00D\nDébito C -700,00D\n",
             "Pagamento 700,00D\n[1] Débito A -700,00D\n")
-        self.assertEqual([ok for _, _, ok in resultado], [True, True, False])
-        self.assertEqual(faltando, 1)
+        self.assertEqual([ok for _, _, ok in resultado], [True, False, False])
+        self.assertEqual(faltando, 2)
 
     def test_pesquisa_e_filtro_nao_redistribuem_ocorrencias(self):
         origem = "01/10/2026 Débito -700,00D\n02/10/2026 Débito -700,00D\nCrédito 700,00C\n"
@@ -114,7 +213,7 @@ class ComparacaoTests(unittest.TestCase):
         resultado, _, _ = self.comparar(
             "01/10/2026 SALDO DO DIA 700,00C\n01/10/2026 1001 Crédito 700,00C\n",
             "Recebimento 700,00C\n")
-        self.assertEqual([(n, ok) for n, _, ok in resultado], [(2, True)])
+        self.assertEqual([(n, ok) for n, _, ok in resultado], [(2, False)])
 
 
 if __name__ == "__main__":

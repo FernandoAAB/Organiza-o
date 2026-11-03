@@ -55,6 +55,46 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(main.carregar_linhas("a2.txt"), ["[2] Crédito 200,00C"])
         self.assertEqual(self.app.var_falta.get(), "1")
 
+    def test_servidor_de_captura_pode_iniciar_parar_e_iniciar_novamente(self):
+        self.app.iniciar_servidor_captura()
+        self.app.update()
+        self.assertIsNotNone(self.app.servidor_captura)
+        self.assertIsNotNone(self.app.qr_imagem)
+        self.app.parar_servidor_captura()
+        self.app.update()
+        self.assertIsNone(self.app.servidor_captura)
+        self.app.iniciar_servidor_captura()
+        self.app.update()
+        self.assertIsNotNone(self.app.servidor_captura)
+        self.assertIsNotNone(self.app.qr_imagem)
+
+    def test_captura_valida_automaticamente_os_dados_do_ocr(self):
+        Path("a1.txt").write_text(
+            "03/11/2026 Mercado Teste 123,45D\n", encoding="utf-8")
+        self.app.atualizar_tudo()
+        with patch.object(main, "executar_ocr", return_value=(
+                    "Mercado Teste\n03/11/2026\nTotal a pagar R$ 123,45\n",
+                    "aviso informativo do OCR")):
+            self.app.receber_captura(b"imagem ficticia", ".png")
+            self.app.update_idletasks()
+            self.app.update()
+        self.assertEqual(main.carregar_linhas("a2.txt"),
+                         ["[1] 03/11/2026 Mercado Teste 123,45D"])
+        self.assertIsNone(self.app.captura_pendente)
+
+    def test_comparacao_mantem_ok_verde_e_captura_amarela(self):
+        Path("a1.txt").write_text(
+            "01/11/2026 Registro normal 100,00D\n"
+            "02/11/2026 Registro da captura 200,00D\n", encoding="utf-8")
+        Path("a2.txt").write_text(
+            "[1] 01/11/2026 Registro normal 100,00D\n"
+            "[2] 02/11/2026 Registro da captura 200,00D\n", encoding="utf-8")
+        self.app.capturas_adicionadas = {2}
+        self.app.atualizar_tudo()
+        itens = self.app.tree_deb.get_children()
+        self.assertEqual(self.app.tree_deb.item(itens[0], "tags")[0], "ok")
+        self.assertEqual(self.app.tree_deb.item(itens[1], "tags")[0], "captura")
+
     def test_limpar_selecao_sincroniza_os_dois_paineis(self):
         self.app.tree_busca.selection_set("0")
         self.app.update()
