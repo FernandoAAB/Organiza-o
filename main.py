@@ -942,14 +942,25 @@ class App(ctk.CTk):
             if temporario is not None:
                 Path(temporario).unlink(missing_ok=True)
         campos = interpretar_texto_documento(texto)
-        self.captura_pendente = {"texto": texto}
-        self.atualizar_fila_captura()
         self.captura_descricao.set(campos["descricao"])
         self.captura_data.set(campos["data"])
         self.captura_valor.set(campos["valor"])
         self.captura_tipo.set(campos["tipo"])
         self.captura_texto.delete("1.0", "end")
         self.captura_texto.insert("1.0", texto)
+        if not campos["descricao"] or not campos["data"] or not campos["valor"] \
+                or campos["tipo"] not in ("D", "C"):
+            self.captura_pendente = None
+            self.atualizar_fila_captura()
+            self.trocar_aba("Captura")
+            self.captura_aviso.set(
+                "Não foi possível identificar a imagem. "
+                "Documento descartado e não adicionado ao A2.")
+            self.status.set("Imagem não identificada; documento descartado.")
+            self.processar_proxima_captura()
+            return
+        self.captura_pendente = {"texto": texto}
+        self.atualizar_fila_captura()
         self.captura_aviso.set(
             aviso or "Foto pronta. Confira os campos e verifique no A1.")
         self.trocar_aba("Captura")

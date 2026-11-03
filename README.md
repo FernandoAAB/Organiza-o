@@ -96,8 +96,10 @@ Depois do envio, o OCR local preenche uma revisão com descrição, data, valor 
 tipo (`D` para débito ou `C` para crédito). Revise e edite os campos e clique em
 **Verificar no A1 e adicionar ao A2**. O programa só inclui automaticamente
 quando encontra uma única linha do A1 com a mesma data, valor e tipo D/C.
-Duplicidades e documentos sem correspondência permanecem para revisão. A linha
-incluída recebe uma cor própria na conferência **A1 × A2** durante a sessão.
+Se o OCR não conseguir identificar os campos essenciais, a foto é descartada
+com um aviso na tela e não fica presa aguardando revisão. Duplicidades e
+documentos sem correspondência permanecem para revisão. A linha incluída recebe
+uma cor própria na conferência **A1 × A2** durante a sessão.
 Ao escolher uma foto no celular, o envio começa automaticamente; não é
 necessário clicar em outro botão. O formulário aceita várias fotos na mesma
 remessa e mantém uma fila de revisão. As imagens ficam somente em memória durante

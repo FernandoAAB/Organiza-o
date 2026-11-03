@@ -96,6 +96,20 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(main.carregar_linhas("a2.txt"), [])
         self.assertIn("não encontrado no A1", self.app.captura_aviso.get())
 
+    def test_captura_sem_campos_identificados_e_descartada(self):
+        Path("a1.txt").write_text(
+            "03/11/2026 Mercado Teste 123,45D\n", encoding="utf-8")
+        self.app.atualizar_tudo()
+        with patch.object(main, "executar_ocr", return_value=(
+                    "imagem sem texto financeiro", "")):
+            self.app.receber_captura(b"imagem ficticia", ".png")
+            self.app.update_idletasks()
+            self.app.update()
+        self.assertIsNone(self.app.captura_pendente)
+        self.assertEqual(main.carregar_linhas("a2.txt"), [])
+        self.assertIn("imagem", self.app.captura_aviso.get().lower())
+        self.assertIn("descartado", self.app.captura_aviso.get().lower())
+
     def test_comparacao_mantem_ok_verde_e_captura_amarela(self):
         Path("a1.txt").write_text(
             "01/11/2026 Registro normal 100,00D\n"
