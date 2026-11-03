@@ -57,22 +57,24 @@ Clique na mensagem de status para ler seu conteúdo completo.
 Duplo clique adiciona apenas o registro clicado: cabeçalhos e áreas vazias não
 adicionam a seleção anterior. Limpar a seleção também limpa o outro painel.
 
-Todas as capturas abaixo mostram o aplicativo atual, incluindo pesquisa e
-filtro de créditos. As tabelas mantêm as colunas
+As imagens abaixo formam a galeria visual atual do aplicativo, incluindo pesquisa,
+filtro de créditos, lista A2 e comparação. As tabelas mantêm as colunas
 aprovadas, sem a coluna **Tipo**, e **Registro** é dimensionado pelo conteúdo.
 Use a barra horizontal para ler linhas longas por inteiro e arraste a divisória
 central para ampliar um dos painéis.
 
-![Tema escuro com Aparência expandida e coluna Valor nos dois painéis](docs/images/tela-inicial.png)
+#### Tela principal e comparação
 
-![Tema claro com cartões, ícones e linhas alternadas nos dois painéis](docs/images/tema-claro.png)
+![Tela principal atual no tema escuro, com Aparência expandida, pesquisa e comparação A1 × A2](docs/images/tela-inicial.png)
+
+![Tela principal atual no tema claro, com cartões, ícones e linhas alternadas](docs/images/tema-claro.png)
 
 ### Lista A2
 
 Mostra os registros escolhidos, mantendo a referência original do A1. Permite
 filtrar, remover e exportar a seleção.
 
-![Lista A2 compacta no tema claro com valores e linhas originais](docs/images/lista-a2.png)
+![Lista A2 atual no tema claro, com valores e referências das linhas do A1](docs/images/lista-a2.png)
 
 ### Pesquisa compartilhada
 
@@ -80,7 +82,7 @@ Pesquisar `32000` encontra os registros de `320,00` nos dois lados. Neste exempl
 o débito já está no A2 e o crédito ainda falta: o mesmo valor com tipos diferentes
 é conferido separadamente. **Limpar** limpa a pesquisa dos dois painéis.
 
-![Pesquisa por 32000 nos dois painéis, com um débito conferido e um crédito faltando](docs/images/comparacao.png)
+![Comparação atual após pesquisar 32000, com um débito conferido e um crédito faltando](docs/images/comparacao.png)
 
 ### Capturar documento pelo telefone
 
@@ -117,7 +119,7 @@ O filtro da direita permite conferir somente créditos ou somente débitos; o A1
 continua disponível à esquerda. Os contadores e o relatório acompanham a pesquisa
 e o tipo selecionado. A sequência **Nº** recomeça em 1 e **Linha A1** mantém a referência original.
 
-![Filtro de créditos com três registros, um encontrado e dois faltando](docs/images/creditos.png)
+![Filtro atual de créditos, com registros encontrados e faltantes](docs/images/creditos.png)
 
 ### Arquivos de referência
 
