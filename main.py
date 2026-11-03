@@ -994,8 +994,11 @@ class App(ctk.CTk):
             data, str(numero), tipo)
         if len(correspondencias) == 0:
             self.captura_aviso.set(
-                "Nenhuma correspondência exata no A1. O documento permanece para revisão.")
-            self.status.set("Nenhuma correspondência exata encontrada no A1.")
+                "Documento não encontrado no A1. Não foi adicionado ao A2.")
+            self.status.set("Documento não encontrado no A1.")
+            self.captura_pendente = None
+            self.atualizar_fila_captura()
+            self.processar_proxima_captura()
             return
         if len(correspondencias) > 1:
             self.captura_aviso.set(

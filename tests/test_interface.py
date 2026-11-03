@@ -82,6 +82,20 @@ class InterfaceTests(unittest.TestCase):
                          ["[1] 03/11/2026 Mercado Teste 123,45D"])
         self.assertIsNone(self.app.captura_pendente)
 
+    def test_captura_nao_encontrada_no_a1_e_encerrada_com_aviso(self):
+        Path("a1.txt").write_text(
+            "03/11/2026 Mercado Diferente 999,99D\n", encoding="utf-8")
+        self.app.atualizar_tudo()
+        with patch.object(main, "executar_ocr", return_value=(
+                    "Mercado Teste\n03/11/2026\nTotal a pagar R$ 123,45\n",
+                    "")):
+            self.app.receber_captura(b"imagem ficticia", ".png")
+            self.app.update_idletasks()
+            self.app.update()
+        self.assertIsNone(self.app.captura_pendente)
+        self.assertEqual(main.carregar_linhas("a2.txt"), [])
+        self.assertIn("não encontrado no A1", self.app.captura_aviso.get())
+
     def test_comparacao_mantem_ok_verde_e_captura_amarela(self):
         Path("a1.txt").write_text(
             "01/11/2026 Registro normal 100,00D\n"
