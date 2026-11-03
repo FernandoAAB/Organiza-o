@@ -73,6 +73,15 @@ class LancamentosComSinalTests(unittest.TestCase):
             "tipo": "D",
         })
 
+    def test_interpretacao_prioriza_total_em_vez_do_ultimo_valor(self):
+        campos = main.interpretar_texto_documento(
+            "Padaria Central\n03.11.2026\nSubtotal R$ 10,00\n"
+            "Total a pagar R$ 12,50\nTroco R$ 2,50\nPagamento débito"
+        )
+        self.assertEqual(campos["data"], "03/11/2026")
+        self.assertEqual(campos["valor"], "12.50")
+        self.assertEqual(campos["tipo"], "D")
+
     def test_interpretacao_nao_inventa_campos_ausentes(self):
         self.assertEqual(main.interpretar_texto_documento("Recibo sem valor"), {
             "descricao": "Recibo sem valor", "data": "", "valor": "", "tipo": ""

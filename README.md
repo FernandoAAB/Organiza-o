@@ -96,6 +96,9 @@ Depois do envio, o OCR local preenche uma revisão com descrição, data, valor 
 tipo (`D` para débito ou `C` para crédito). Revise e edite os campos e clique em
 **Verificar no A1 e adicionar ao A2**. O programa só inclui automaticamente
 quando encontra uma única linha do A1 com a mesma data, valor e tipo D/C.
+Antes de reconhecer o texto, a imagem tem orientação, contraste, escala, nitidez
+e ruído tratados localmente. Na interpretação, rótulos como **Total**, **Total a
+pagar**, **Valor final** e **Pago** têm prioridade sobre subtotal, itens e troco.
 Se o OCR não conseguir identificar os campos essenciais, a foto é descartada
 com um aviso na tela e não fica presa aguardando revisão. Duplicidades e
 documentos sem correspondência permanecem para revisão. A linha incluída recebe

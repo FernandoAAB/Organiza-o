@@ -14,7 +14,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from tkinter import ttk, messagebox
 from tkinter import font as tkfont
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, ImageTk
 try:
     import pytesseract
 except ImportError:
@@ -170,24 +170,31 @@ def salvar_linhas(nome_arquivo, linhas):
 
 
 def interpretar_texto_documento(texto):
-    """Extrai campos financeiros simples sem inventar valores ausentes."""
-    valores = re.findall(
-        r"(?<![\d.,])(?:R\$\s*)?([+-]?\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+,\d{2})(?![\d.,])",
-        texto,
-        flags=re.IGNORECASE,
+    """Extrai campos financeiros priorizando rótulos comuns de documentos."""
+    padrao_valor = (
+        r"(?<![\d.,])(?:R\$\s*)?"
+        r"([+-]?\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+,\d{2})(?![\d.,])"
     )
-    valor = ""
-    if valores:
-        valor = valores[-1].replace(".", "").replace(",", ".").lstrip("+")
-    datas = re.findall(r"\b\d{2}/\d{2}/\d{2,4}\b", texto)
+    linhas = [linha.strip() for linha in texto.splitlines() if linha.strip()]
+    valores_contextuais = []
+    todos_valores = []
+    for linha in linhas:
+        encontrados = re.findall(padrao_valor, linha, flags=re.IGNORECASE)
+        todos_valores.extend(encontrados)
+        if encontrados and re.search(
+                r"\b(?:total|valor\s+(?:total|a\s+pagar)|vlr|valor\s+final|pago)\b",
+                linha, re.IGNORECASE):
+            valores_contextuais.extend(encontrados)
+    valores = valores_contextuais or todos_valores
+    valor = valores[-1].replace(".", "").replace(",", ".").lstrip("+") if valores else ""
+    datas = re.findall(r"\b\d{2}[./-]\d{2}[./-]\d{2,4}\b", texto)
     tipo = "D" if re.search(r"\b(?:d[eé]bito|pagamento|compra|total a pagar)\b", texto, re.I) else ""
     if not tipo and re.search(r"\b(?:cr[eé]dito|recebimento|entrada)\b", texto, re.I):
         tipo = "C"
-    linhas = [linha.strip() for linha in texto.splitlines() if linha.strip()]
     descricao = linhas[0][:120] if linhas else ""
     return {
         "descricao": descricao,
-        "data": datas[0] if datas else "",
+        "data": datas[0].replace(".", "/").replace("-", "/") if datas else "",
         "valor": valor,
         "tipo": tipo,
     }
@@ -232,8 +239,17 @@ def executar_ocr(caminho):
         pytesseract.pytesseract.tesseract_cmd = str(executavel)
         os.environ["TESSDATA_PREFIX"] = str(tessdata)
     try:
-        texto = pytesseract.image_to_string(Image.open(caminho), lang="por",
-                                            config=configuracao)
+        with Image.open(caminho) as original:
+            imagem = ImageOps.exif_transpose(original).convert("L")
+            imagem = ImageOps.autocontrast(imagem)
+            if imagem.width < 1400:
+                escala = 1400 / imagem.width
+                imagem = imagem.resize(
+                    (1400, round(imagem.height * escala)), Image.Resampling.LANCZOS)
+            imagem = ImageEnhance.Sharpness(imagem).enhance(1.5)
+            imagem = imagem.filter(ImageFilter.MedianFilter(size=3))
+            texto = pytesseract.image_to_string(imagem, lang="por",
+                                                config=configuracao)
     except (OSError, ValueError, RuntimeError, pytesseract.TesseractNotFoundError,
             pytesseract.TesseractError) as erro:
         return "", f"O OCR local não pôde ler a imagem: {erro}"
