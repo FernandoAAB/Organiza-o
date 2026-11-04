@@ -428,3 +428,46 @@ class PainelFolhasHTTPTests(unittest.TestCase):
         self.assertEqual(painel['erros'], [])
         self.assertEqual(painel['recentes'][0]['id'], identificador)
         self.assertEqual(painel['recentes'][0]['estado'], 'descartada')
+
+
+class AberturaRelatorioTests(unittest.TestCase):
+    def test_windows_usa_caminho_nativo_com_espacos_e_acentos(self):
+        caminho = Path('Pasta com espaços João') / 'relatorio.html'
+        with patch.object(main.sys, 'platform', 'win32'), \
+                patch.object(main.os, 'startfile', create=True) as abrir, \
+                patch.object(main.webbrowser, 'open') as navegador:
+            self.assertTrue(main.abrir_arquivo_relatorio(caminho))
+        abrir.assert_called_once_with(str(caminho.resolve()))
+        navegador.assert_not_called()
+
+    def test_falha_da_abertura_nativa_tenta_navegador(self):
+        caminho = Path('relatorio.html')
+        with patch.object(main.sys, 'platform', 'win32'), \
+                patch.object(main.os, 'startfile', create=True, side_effect=OSError('sem associacao')), \
+                patch.object(main.webbrowser, 'open', return_value=True) as abrir:
+            self.assertTrue(main.abrir_arquivo_relatorio(caminho))
+        abrir.assert_called_once_with(caminho.resolve().as_uri(), new=2)
+
+    def test_erro_do_navegador_retorna_falha(self):
+        with patch.object(main.sys, 'platform', 'linux'), \
+                patch.object(main.webbrowser, 'open', side_effect=main.webbrowser.Error('indisponivel')):
+            self.assertFalse(main.abrir_arquivo_relatorio('relatorio.html'))
+
+    def test_relatorio_e_gravado_com_filtro_sem_abrir_programas(self):
+        import os
+        with tempfile.TemporaryDirectory() as pasta:
+            anterior = Path.cwd()
+            os.chdir(pasta)
+            try:
+                Path('a1.txt').write_text('04/11/2026 Pagamento 100,00D\n04/11/2026 Entrada <teste> 200,00C\n', encoding='utf-8')
+                Path('a2.txt').write_text('[2] 04/11/2026 Entrada <teste> 200,00C\n', encoding='utf-8')
+                with patch.object(main, 'abrir_arquivo_relatorio') as abrir:
+                    caminho = main.gerar_relatorio_html('C', 'Entrada', abrir=False)
+                html = Path(caminho).read_text(encoding='utf-8')
+                abrir.assert_not_called()
+                self.assertIn('Entrada &lt;teste&gt;', html)
+                self.assertNotIn('Pagamento 100,00D', html)
+                self.assertIn('window.print()', html)
+                self.assertIn('Faltando no A2:</b> 0', html)
+            finally:
+                os.chdir(anterior)

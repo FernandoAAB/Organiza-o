@@ -1022,7 +1022,7 @@ def calcular_debitos():
     return calcular_lancamentos("D")
 
 
-def gerar_relatorio_html(tipo=None, termo=""):
+def gerar_relatorio_html(tipo=None, termo="", abrir=True):
     resultado, total, faltando = calcular_lancamentos(tipo, termo)
     categoria = {None: "Débitos e Créditos", "D": "Débitos", "C": "Créditos"}[tipo]
     linhas = ""
@@ -1064,8 +1064,25 @@ th {{ background-color: #f4f4f4; }}
     caminho = os.path.join(PASTA_REG, "relatorio_debitos.html")
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(html)
-    webbrowser.open(Path(caminho).resolve().as_uri())
+    if abrir:
+        abrir_arquivo_relatorio(caminho)
     return caminho
+
+
+def abrir_arquivo_relatorio(caminho):
+    arquivo = Path(caminho).resolve()
+    if sys.platform == "win32":
+        try:
+            # ShellExecute recebe o caminho Unicode nativo, sem converter nomes
+            # com espaços e acentos em uma URL file:// codificada.
+            os.startfile(str(arquivo))
+            return True
+        except (OSError, AttributeError):
+            pass
+    try:
+        return bool(webbrowser.open(arquivo.as_uri(), new=2))
+    except (OSError, webbrowser.Error):
+        return False
 
 
 
@@ -2177,8 +2194,18 @@ class App(ctk.CTk):
         return {"Todos": None, "Débitos": "D", "Créditos": "C"}[self.tipo_comparacao.get()]
 
     def imprimir_relatorio(self):
-        caminho = gerar_relatorio_html(self.tipo_selecionado(), self.termo_busca)
-        self.status.set(f"Relatório salvo em {os.path.abspath(caminho)}")
+        caminho = gerar_relatorio_html(self.tipo_selecionado(), self.termo_busca, abrir=False)
+        arquivo = str(Path(caminho).resolve())
+        if abrir_arquivo_relatorio(arquivo):
+            self.status.set(f"Relatório aberto. Arquivo salvo em {arquivo}")
+        else:
+            self.status.set(f"Relatório salvo, mas não foi possível abrir automaticamente: {arquivo}")
+            messagebox.showwarning(
+                "Relatório salvo",
+                "O relatório foi gerado, mas não foi possível abrir automaticamente.\n\n"
+                f"Arquivo: {arquivo}\n\n"
+                "Abra esse arquivo em um navegador e clique em Imprimir Relatório ou pressione Ctrl+P.",
+                parent=self)
 
     def atualizar_debitos(self):
         self.tree_deb.delete(*self.tree_deb.get_children())

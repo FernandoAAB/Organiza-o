@@ -724,6 +724,17 @@ class InterfaceTests(unittest.TestCase):
             main.ctk.set_widget_scaling(1)
             main.ctk.set_window_scaling(1)
 
+    def test_relatorio_avisa_quando_nao_consegue_abrir_o_arquivo(self):
+        with patch.object(main.sys, 'platform', 'win32'), \
+                patch.object(main.os, 'startfile', create=True, side_effect=OSError('sem associacao')), \
+                patch.object(main.webbrowser, 'open', return_value=False), \
+                patch.object(main.messagebox, 'showwarning') as aviso:
+            self.app.imprimir_relatorio()
+        self.assertTrue(Path('No/relatorio_debitos.html').is_file())
+        aviso.assert_called_once()
+        self.assertIn('relatorio_debitos.html', aviso.call_args.args[1])
+        self.assertIn('não foi possível abrir', self.app.status.get().lower())
+
     def test_indicadores_acompanham_inclusao_pesquisa_e_filtro(self):
         def conferir(origem, ok, falta):
             self.assertEqual(self.app.indicador_origem.get(), str(origem))

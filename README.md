@@ -309,6 +309,10 @@ compilação, ou você pode executar o código atualizado como descrito acima.
    apenas nesse painel, e os contadores mostram as quantidades visíveis. **Relatório**
    abre `No/relatorio_debitos.html` no navegador, com a mesma pesquisa e tipo.
    O nome do arquivo foi mantido para compatibilidade; ele agora inclui créditos também.
+   Na página aberta, use **Imprimir Relatório** ou Ctrl+P. No Windows, o arquivo
+   é aberto pelo caminho nativo, aceitando pastas com espaços e acentos. Se a
+   abertura automática falhar, o programa avisa e mostra o caminho do HTML salvo
+   para você abri-lo manualmente em um navegador.
 5. Em **Lista A2**, filtre, remova registros ou exporte a seleção para `No/N.txt`.
    A exportação contém todo o A2, na ordem das linhas originais.
 
