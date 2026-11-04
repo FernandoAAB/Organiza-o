@@ -228,17 +228,20 @@ class InterfaceTests(unittest.TestCase):
         self.assertFalse(self.app.captura_processando)
 
     def test_janela_responde_enquanto_codigo_nativo_prende_gil_no_ocr(self):
-        self.app.executor_ocr = ExecutorOCR(timeout=15, processador=tarefa_teste)
+        self.app.executor_ocr = ExecutorOCR(timeout=30, processador=tarefa_teste)
         # Aquece o processo para separar a carga de CPU do tempo de inicialização.
         pronto = threading.Event()
+        resultados = []
         thread = threading.Thread(target=lambda: (
-            self.app.executor_ocr.ler(b"pid", ".png", "PaddleOCR"), pronto.set()), daemon=True)
+            resultados.append(self.app.executor_ocr.ler(b"pid", ".png", "PaddleOCR")),
+            pronto.set()), daemon=True)
         thread.start()
-        limite = time.monotonic() + 10
+        limite = time.monotonic() + 35
         while not pronto.is_set() and time.monotonic() < limite:
             self.app.update()
             time.sleep(0.01)
         self.assertTrue(pronto.is_set())
+        self.assertEqual(resultados[0][1], "")
         self.app.receber_captura(b"nativo", ".png")
         self.app.receber_captura(b"pid", ".png")
         pulsos = []
