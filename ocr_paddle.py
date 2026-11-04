@@ -37,6 +37,7 @@ def criar_motor():
         use_textline_orientation=True,
         text_rec_score_thresh=0.0,
         device="cpu", enable_mkldnn=False,
+        cpu_threads=max(1, min(2, (os.cpu_count() or 2) - 1)),
     )
 
 

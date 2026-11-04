@@ -7,6 +7,9 @@ import time
 import unittest
 import http.client
 import traceback
+from types import SimpleNamespace
+from ocr_runtime import ExecutorOCR
+from test_ocr_runtime import tarefa_teste
 from unittest.mock import patch
 from pathlib import Path
 
@@ -25,6 +28,10 @@ class InterfaceTests(unittest.TestCase):
         Path("a1.txt").write_text("Pagamento -100,00D\nCrédito 200,00C\n", encoding="utf-8")
         Path("a2.txt").write_text("", encoding="utf-8")
         self.app = main.App()
+        # Os testes de regras simulam a leitura; o teste de isolamento abaixo
+        # substitui explicitamente este adaptador por um processo real.
+        self.app.executor_ocr = SimpleNamespace(
+            ler=lambda *args: self.app.ler_imagem_captura(*args), fechar=lambda: None)
         self.addCleanup(self.fechar_app)
         self.erros = []
         self.app.report_callback_exception = lambda *args: self.erros.append(args)
@@ -35,6 +42,7 @@ class InterfaceTests(unittest.TestCase):
         self.assertFalse(self.erros)
 
     def fechar_app(self):
+        self.app.executor_ocr.fechar()
         for callback in self.app.tk.call("after", "info"):
             self.app.tk.call("after", "cancel", callback)
         self.app.destroy()
@@ -213,6 +221,32 @@ class InterfaceTests(unittest.TestCase):
             time.sleep(0.01)
         self.app.update()
         self.assertFalse(self.app.captura_processando)
+
+    def test_janela_responde_enquanto_codigo_nativo_prende_gil_no_ocr(self):
+        self.app.executor_ocr = ExecutorOCR(timeout=15, processador=tarefa_teste)
+        # Aquece o processo para separar a carga de CPU do tempo de inicialização.
+        pronto = threading.Event()
+        thread = threading.Thread(target=lambda: (
+            self.app.executor_ocr.ler(b"pid", ".png", "PaddleOCR"), pronto.set()), daemon=True)
+        thread.start()
+        limite = time.monotonic() + 10
+        while not pronto.is_set() and time.monotonic() < limite:
+            self.app.update()
+            time.sleep(0.01)
+        self.assertTrue(pronto.is_set())
+        self.app.receber_captura(b"nativo", ".png")
+        self.app.receber_captura(b"pid", ".png")
+        pulsos = []
+        inicio = time.monotonic()
+        def pulso():
+            pulsos.append(time.monotonic() - inicio)
+            if self.app.captura_processando:
+                self.app.after(30, pulso)
+        self.app.after(30, pulso)
+        self.aguardar_ocr()
+        self.assertGreater(len(pulsos), 5)
+        self.assertLess(max(b - a for a, b in zip(pulsos, pulsos[1:])), 0.7)
+        self.assertEqual(self.app.capturas_fila, [])
 
     def test_tesseract_recebe_segunda_foto_sem_bloquear_a_janela(self):
         liberar = threading.Event()

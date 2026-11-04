@@ -1,6 +1,10 @@
 # Aplicativo desktop: reúne a conferência A1 × A2, a interface e a captura de documentos.
 # Os dados de uso ficam no diretório de execução; o Tesseract portátil é localizado junto deste módulo.
 import json
+import csv
+import io
+import subprocess
+import multiprocessing
 import queue
 import os
 import re
@@ -29,6 +33,7 @@ except ImportError:
     qrcode = None
 
 import customtkinter as ctk  # pip install customtkinter
+from ocr_runtime import ExecutorOCR
 import ocr_paddle  # Adaptador leve; os modelos só carregam quando selecionados.
 
 # A1 guarda a origem; A2 registra os itens escolhidos com a referência da linha original.
@@ -349,6 +354,42 @@ def ler_resultado_ocr(dados):
     return "\n".join(" ".join(linha) for linha in linhas.values()), soma / peso if peso else 0
 
 
+def ler_dados_tesseract(imagem, configuracao):
+    try:
+        return pytesseract.image_to_data(
+            imagem, lang="por", output_type=pytesseract.Output.DICT,
+            config=configuracao, timeout=20)
+    except UnicodeDecodeError:
+        # O texto TSV do Tesseract é UTF-8, mas os erros do Windows podem ser
+        # CP1252. Não deixe a decodificação do diagnóstico esconder o erro real.
+        with NamedTemporaryFile(suffix=".png", delete=False) as arquivo:
+            caminho = arquivo.name
+        try:
+            imagem.save(caminho)
+            import shlex
+            argumentos = shlex.split(configuracao)
+            resultado = subprocess.run(
+                [str(pytesseract.pytesseract.tesseract_cmd), caminho, "stdout",
+                 "-l", "por", *argumentos, "tsv"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+            if resultado.returncode:
+                try:
+                    detalhe = resultado.stderr.decode("utf-8")
+                except UnicodeDecodeError:
+                    detalhe = resultado.stderr.decode("cp1252", errors="replace")
+                raise RuntimeError("Tesseract: " + detalhe.strip()[:4000])
+            linhas = list(csv.DictReader(io.StringIO(resultado.stdout.decode("utf-8-sig")), delimiter="\t"))
+            if not linhas:
+                return {chave: [] for chave in ("text", "conf", "page_num", "block_num", "par_num", "line_num")}
+            return {chave: [linha[chave] for linha in linhas] for chave in linhas[0]}
+        finally:
+            try:
+                Path(caminho).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def executar_ocr(caminho):
     if pytesseract is None:
         return "", "OCR local não instalado."
@@ -363,16 +404,14 @@ def executar_ocr(caminho):
         with Image.open(caminho) as original:
             imagens = preparar_imagens_ocr(original)
         for imagem, modo in zip(imagens, (6, 11)):
-            dados = pytesseract.image_to_data(
-                imagem, lang="por", output_type=pytesseract.Output.DICT,
-                config=f'{configuracao} --psm {modo} --dpi 300', timeout=20)
+            dados = ler_dados_tesseract(imagem, f'{configuracao} --psm {modo} --dpi 300')
             texto, confianca = ler_resultado_ocr(dados)
             if texto.strip():
                 numeros_incertos = any(
                     re.search(r"\d", palavra) and 0 <= float(conf) < 70
                     for palavra, conf in zip(dados["text"], dados["conf"]))
                 candidatos.append((texto, confianca, numeros_incertos))
-    except (OSError, ValueError, RuntimeError, pytesseract.TesseractNotFoundError,
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired, pytesseract.TesseractNotFoundError,
             pytesseract.TesseractError) as erro:
         if not candidatos:
             return "", f"O OCR local não pôde ler a imagem: {erro}"
@@ -901,6 +940,7 @@ class App(ctk.CTk):
             self.status.set("Não foi possível carregar as marcações de atenção: " + erro_atencao)
 
     def fechar(self):
+        self.executor_ocr.fechar()
         self.parar_servidor_captura()
         self.destroy()
 
@@ -1163,7 +1203,7 @@ class App(ctk.CTk):
         self.captura_aviso.set("Lendo com " + motor + ". Aguarde o processamento.")
         def tarefa():
             try:
-                resultado = self.ler_imagem_captura(conteudo, extensao, motor)
+                resultado = self.executor_ocr.ler(conteudo, extensao, motor)
             except Exception as erro:
                 resultado = ("", f"Não foi possível ler a imagem: {erro}")
             self.resultados_ocr.put(resultado)
@@ -1296,6 +1336,7 @@ class App(ctk.CTk):
 
     def _montar_aba_captura(self):
         self.captura_processando = False
+        self.executor_ocr = ExecutorOCR()
         self.resultados_ocr = queue.Queue()
         self.entradas_captura = queue.Queue()
         self.after(50, self.receber_fotos_enfileiradas)
@@ -1811,5 +1852,6 @@ class App(ctk.CTk):
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     inicializar_arquivos()
     App().mainloop()

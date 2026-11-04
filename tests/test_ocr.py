@@ -86,3 +86,32 @@ class OCRTests(unittest.TestCase):
                 self.assertEqual(resultado, ('texto', 'aviso'))
             finally:
                 caminho.unlink(missing_ok=True)
+
+    def test_diagnostico_cp1252_mostra_erro_real_sem_falha_utf8(self):
+        erro = UnicodeDecodeError('utf-8', b'\xe3', 0, 1, 'invalid continuation byte')
+        from types import SimpleNamespace
+        with patch.object(main.pytesseract, 'image_to_data', side_effect=erro), \
+                patch.object(main.subprocess, 'run', return_value=SimpleNamespace(
+                    returncode=1, stdout=b'', stderr='Não abriu o modelo português'.encode('cp1252'))):
+            texto, aviso = main.executar_ocr(self.imagem_teste())
+        self.assertEqual(texto, '')
+        self.assertIn('Não abriu o modelo português', aviso)
+        self.assertNotIn('codec', aviso)
+
+    def imagem_teste(self):
+        pasta = tempfile.TemporaryDirectory()
+        self.addCleanup(pasta.cleanup)
+        caminho = Path(pasta.name) / 'recibo.png'
+        Image.new('RGB', (100, 100), 'white').save(caminho)
+        return caminho
+
+    def test_fallback_tsv_preserva_acentos_e_campos(self):
+        erro = UnicodeDecodeError('utf-8', b'\xe3', 0, 1, 'invalid continuation byte')
+        from types import SimpleNamespace
+        tsv = ('page_num\tblock_num\tpar_num\tline_num\tconf\ttext\n'
+               '1\t1\t1\t1\t99\tPão\n')
+        with patch.object(main.pytesseract, 'image_to_data', side_effect=erro), \
+                patch.object(main.subprocess, 'run', return_value=SimpleNamespace(
+                    returncode=0, stdout=tsv.encode('utf-8'), stderr=b'')):
+            dados = main.ler_dados_tesseract(Image.new('RGB', (10, 10)), '--psm 6 --dpi 300')
+        self.assertEqual(main.ler_resultado_ocr(dados), ('Pão', 99))

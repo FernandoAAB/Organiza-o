@@ -114,8 +114,12 @@ documentos sem correspondência permanecem para revisão. A linha incluída rece
 uma cor própria na conferência **A1 × A2** durante a sessão.
 Ao escolher uma foto no celular, o envio começa automaticamente; não é
 necessário clicar em outro botão. O formulário aceita várias fotos na mesma
-remessa e mantém uma fila de revisão. Todos os motores leem em segundo plano,
-uma foto por vez; novos envios entram na fila sem bloquear a janela. Quando
+remessa e mantém uma fila de revisão. Todos os motores leem em um processo separado da interface, uma foto por vez;
+novos envios entram na fila. O processo é reutilizado para manter os modelos
+carregados, usa até duas threads nas bibliotecas numéricas e tem limite de
+180 segundos por leitura. Se encerrar ou exceder o prazo, a leitura falha
+com um aviso e o processo é recriado para a próxima foto. Ao fechar a janela,
+o processo de OCR também é encerrado. Quando
 uma foto precisa de revisão, confirme-a ou use **Descartar foto e seguir fila**
 para liberar a próxima. Receber outra foto não apaga os avisos da revisão atual.
 Durante o OCR, a imagem usa um arquivo
