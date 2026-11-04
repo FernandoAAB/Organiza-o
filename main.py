@@ -444,6 +444,8 @@ def executar_ocr_motor(caminho, motor="Tesseract"):
     outros = interpretar_texto_documento(texto_tesseract)
     iguais = bool(texto_tesseract) and all(campos[k] == outros[k] and campos[k]
                                           for k in ("data", "valor", "tipo"))
+    if iguais and not aviso and not aviso_tesseract:
+        return texto, ""  # Segue a mesma validação automática do PaddleOCR no A1.
     resumo = ("Os mecanismos concordam em data, valor e tipo." if iguais else
               "Há divergência ou campos ausentes entre os mecanismos.")
     return texto, " ".join(item for item in (

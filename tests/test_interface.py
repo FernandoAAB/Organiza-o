@@ -211,6 +211,39 @@ class InterfaceTests(unittest.TestCase):
                     self.assertEqual(self.app.captura_descricao.get(), descricao)
                     self.assertIsNone(self.app.captura_pendente)
 
+    def test_comparar_salva_no_a2_e_avanca_fila_quando_ha_concordancia(self):
+        registros = [f"04/11/2026 Extrato {n} {n}00,00D" for n in (1, 2)]
+        Path("a1.txt").write_text("\n".join(registros), encoding="utf-8")
+        self.app.motor_ocr.set("Comparar")
+        def leitura(caminho, descricao):
+            numero = Path(caminho).read_bytes().decode()
+            return f"{descricao}\n04/11/2026\nTotal a pagar {numero}00,00", ""
+        with patch.object(main, "executar_ocr", side_effect=lambda caminho: leitura(caminho, "Loja no Tesseract")), \
+                patch.object(main.ocr_paddle, "executar_paddleocr", side_effect=lambda caminho: leitura(caminho, "Nome diferente no Paddle")):
+            for n in (1, 2):
+                self.app.receber_captura(str(n).encode(), ".png")
+            self.aguardar_ocr()
+        self.assertEqual(main.carregar_linhas("a2.txt"),
+                         [f"[{n}] {registro}" for n, registro in enumerate(registros, 1)])
+        self.assertIsNone(self.app.captura_pendente)
+        self.assertEqual(self.app.fila_ocr.quantidade(), 0)
+        self.assertEqual(self.app.fila_ocr.quantidade("concluida"), 2)
+        self.assertEqual(list(self.app.fila_ocr.imagens.iterdir()), [])
+
+    def test_comparar_concorda_mas_nao_escolhe_entre_duplicados_do_a1(self):
+        Path("a1.txt").write_text(
+            "04/11/2026 Loja A 123,45D\n04/11/2026 Loja B 123,45D\n", encoding="utf-8")
+        self.app.motor_ocr.set("Comparar")
+        texto = "Loja\n04/11/2026\nTotal a pagar 123,45"
+        with patch.object(main, "executar_ocr", return_value=(texto, "")), \
+                patch.object(main.ocr_paddle, "executar_paddleocr", return_value=(texto, "")):
+            self.app.receber_captura(b"foto", ".png")
+            self.aguardar_ocr()
+        self.assertEqual(main.carregar_linhas("a2.txt"), [])
+        self.assertIsNotNone(self.app.captura_pendente)
+        self.assertEqual(self.app.fila_ocr.quantidade("revisao"), 1)
+        self.assertIn("2 correspondências", self.app.captura_aviso.get())
+
     def test_captura_incerta_aguarda_confirmacao_manual(self):
         Path("a1.txt").write_text(
             "04/11/2026 Mercado 123,45D\n", encoding="utf-8")

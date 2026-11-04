@@ -64,14 +64,13 @@ class PaddleTests(unittest.TestCase):
         self.assertEqual(texto, '')
         self.assertIn('modelo incompleto', aviso)
 
-    def test_comparar_exige_revisao_mesmo_quando_campos_concordam(self):
+    def test_comparar_libera_fluxo_automatico_quando_campos_concordam(self):
         texto = 'Mercado\n04/11/2026\nTotal a pagar 123,45'
         with patch.object(main, 'executar_ocr', return_value=(texto, '')), \
-                patch.object(ocr_paddle, 'executar_paddleocr', return_value=(texto, '')):
+                patch.object(ocr_paddle, 'executar_paddleocr', return_value=(texto.replace('Mercado', 'Descricao diferente'), '')):
             obtido, aviso = main.executar_ocr_motor('foto.png', 'Comparar')
-        self.assertEqual(obtido, texto)
-        self.assertIn('concordam', aviso)
-        self.assertIn('manualmente', aviso)
+        self.assertEqual(obtido, texto.replace('Mercado', 'Descricao diferente'))
+        self.assertEqual(aviso, '')
 
     def test_comparar_nao_oculta_divergencia_financeira(self):
         with patch.object(main, 'executar_ocr', return_value=(
@@ -87,3 +86,15 @@ class PaddleTests(unittest.TestCase):
             texto, aviso = main.executar_ocr_motor('foto.png', 'Comparar')
         self.assertEqual(texto, 'Texto original')
         self.assertIn('não instalado', aviso)
+
+    def test_concordancia_com_leitura_incerta_ainda_exige_revisao(self):
+        texto = 'Mercado\n04/11/2026\nTotal a pagar 123,45'
+        for aviso_paddle, aviso_tesseract in (('Leitura incerta PaddleOCR', ''),
+                                             ('', 'Leitura incerta Tesseract')):
+            with self.subTest(paddle=aviso_paddle, tesseract=aviso_tesseract):
+                with patch.object(main, 'executar_ocr', return_value=(texto, aviso_tesseract)), \
+                        patch.object(ocr_paddle, 'executar_paddleocr', return_value=(texto, aviso_paddle)):
+                    _, aviso = main.executar_ocr_motor('foto.png', 'Comparar')
+                self.assertIn('concordam', aviso)
+                self.assertIn('incerta', aviso)
+                self.assertIn('manualmente', aviso)

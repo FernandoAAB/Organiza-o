@@ -188,9 +188,12 @@ automaticamente, com Python 3.11 a 3.13. Sem a opção instalada, o seletor most
 orientação de instalação; o Tesseract continua disponível.
 
 **Comparar** lê a mesma imagem com os dois mecanismos, mostra o texto do
-PaddleOCR e informa concordância ou divergência em data, valor e tipo. Nesse
-modo a confirmação é sempre manual. Se o PaddleOCR falhar, a leitura do
-Tesseract fica disponível para revisão. Nenhum mecanismo garante acerto de
+PaddleOCR e verifica concordância ou divergência em data, valor e tipo. Quando
+os três campos concordam e nenhum motor informa leitura incerta, segue o
+mesmo fluxo automático do PaddleOCR: procura uma única correspondência no A1,
+salva a linha original no A2 e avança a fila. A descrição é apenas informativa.
+Divergência, campos ausentes, incerteza ou duplicidade no A1 exigem revisão.
+Se o PaddleOCR falhar, a leitura do Tesseract fica disponível para revisão. Nenhum mecanismo garante acerto de
 caracteres ou valores somente pela confiança informada.
 
 Para comparar texto, campos e tempo de execução localmente, sem alterar A1/A2:
