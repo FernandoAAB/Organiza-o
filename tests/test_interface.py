@@ -1,5 +1,6 @@
 # Testes dos controles e interações da interface usando dados temporários; exigem sessão gráfica.
 import os
+import gc
 import sys
 import tempfile
 import threading
@@ -51,6 +52,10 @@ class InterfaceTests(unittest.TestCase):
         for callback in self.app.tk.call("after", "info"):
             self.app.tk.call("after", "cancel", callback)
         self.app.destroy()
+        self.app = None
+        # Objetos Tcl/Tk dos testes anteriores devem ser liberados nesta thread,
+        # antes que uma thread de OCR dispare a coleta de ciclos automaticamente.
+        gc.collect()
 
     def duplo_clique(self, x, y):
         for evento, tempo in (("<ButtonPress-1>", 1000), ("<ButtonRelease-1>", 1010),
@@ -289,9 +294,15 @@ class InterfaceTests(unittest.TestCase):
             pronto.set()), daemon=True)
         thread.start()
         limite = time.monotonic() + 35
-        while not pronto.is_set() and time.monotonic() < limite:
-            self.app.update()
-            time.sleep(0.01)
+        def verificar_inicio():
+            if pronto.is_set() or time.monotonic() >= limite:
+                self.app.quit()
+            else:
+                self.app.after(10, verificar_inicio)
+        self.app.after(10, verificar_inicio)
+        # O aplicativo real usa mainloop; update() isolado não representa o
+        # despacho de chamadas entre threads do Tk no Windows.
+        self.app.mainloop()
         self.assertTrue(pronto.is_set())
         self.assertEqual(resultados[0][1], "")
         self.app.receber_captura(b"nativo", ".png")
