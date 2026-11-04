@@ -96,27 +96,82 @@ Depois do envio, o OCR local preenche uma revisão com descrição, data, valor 
 tipo (`D` para débito ou `C` para crédito). Revise e edite os campos e clique em
 **Verificar no A1 e adicionar ao A2**. O programa só inclui automaticamente
 quando encontra uma única linha do A1 com a mesma data, valor e tipo D/C.
-Antes de reconhecer o texto, a imagem tem orientação, contraste, escala, nitidez
-e ruído tratados localmente. Na interpretação, rótulos como **Total**, **Total a
-pagar**, **Valor final** e **Pago** têm prioridade sobre subtotal, itens e troco.
+Antes de reconhecer o texto, a imagem tem orientação, pequenas inclinações,
+contraste, escala e nitidez tratados localmente, preservando traços finos.
+O OCR faz duas leituras em português: uma em tons de cinza e outra com contraste
+preto e branco calculado pela imagem. Ele escolhe a leitura mais confiante,
+sem substituir letras por números ou inventar caracteres. Se as leituras
+divergirem na data, no valor ou no tipo, ou houver baixa confiança no texto ou
+nos números, o documento aguarda revisão e confirmação manual antes de entrar
+no A2. Cada leitura tem limite de 20 segundos. Na interpretação, rótulos como
+**Total**, **Total a pagar**, **Valor final** e **Pago** têm prioridade sobre
+subtotal, itens e troco.
 Se o OCR não conseguir identificar os campos essenciais, a foto é descartada
 com um aviso na tela e não fica presa aguardando revisão. Duplicidades e
 documentos sem correspondência permanecem para revisão. A linha incluída recebe
 uma cor própria na conferência **A1 × A2** durante a sessão.
 Ao escolher uma foto no celular, o envio começa automaticamente; não é
 necessário clicar em outro botão. O formulário aceita várias fotos na mesma
-remessa e mantém uma fila de revisão. As imagens ficam somente em memória durante
-o OCR e não são salvas no computador. A validação automática inclui no `a2.txt`
+remessa e mantém uma fila de revisão. Durante o OCR, a imagem usa um arquivo
+temporário, removido ao concluir a leitura; o aplicativo não arquiva as fotos. A validação automática inclui no `a2.txt`
 somente a linha correspondente do `a1.txt`; a conferência continua sendo feita
 exclusivamente entre esses dois arquivos.
 
 O projeto inclui uma cópia portátil do Tesseract em `Tesseract-OCR/`, com o
-modelo de português, e a usa automaticamente. Assim, não é necessário instalar
-o Tesseract no Windows. Se essa pasta não estiver presente, o aplicativo tenta
-usar uma instalação disponível no sistema; se o OCR não estiver disponível ou
-não reconhecer a imagem, os campos continuam editáveis para preenchimento
-manual. O servidor aceita somente imagens de até 15 MB e deve ser parado depois
+modelo de português, e usa seu executável automaticamente no Windows. Assim,
+não é necessário instalar o Tesseract no Windows. No Linux, instale o executável `tesseract-ocr`
+pelo gerenciador do sistema; o modelo de português incluído no projeto também
+é utilizado. Se a cópia portátil não estiver presente no Windows, o aplicativo
+tenta usar uma instalação disponível no sistema. Se o OCR falhar ou não extrair
+os campos essenciais, o aplicativo informa o descarte da foto. Quando houver
+texto com campos essenciais, mas leitura incerta, os campos ficam editáveis
+para revisão manual. O servidor aceita somente imagens de até 15 MB e deve ser parado depois
 do uso. O recurso não interpreta contratos nem substitui a conferência humana.
+
+### PaddleOCR opcional e comparação dos mecanismos
+
+O Tesseract continua sendo a opção inicial. Em **Capturar documento**, o seletor
+**Leitura da imagem** permite escolher **PaddleOCR** ou **Comparar**. O PaddleOCR
+usa modelos leves PP-OCRv5 para detecção e reconhecimento de caracteres latinos,
+com orientação de documento e de linhas, executados na CPU.
+
+Para instalar a opção, use Python 3.11 a 3.13, em um sistema compatível com as
+wheels do PaddlePaddle (Windows/Linux x64 ou macOS ARM64):
+
+```sh
+uv sync --frozen --extra paddle
+uv run --frozen --extra paddle python ocr_paddle.py
+uv run --frozen --extra paddle python main.py
+```
+
+O segundo comando prepara os modelos: a primeira execução precisa de internet
+para baixar os pesos oficiais. Nenhuma foto é enviada. Os modelos ficam no
+cache local do PaddleX (`~/.paddlex` por padrão); depois do preparo a leitura
+usa os arquivos locais. O PaddleOCR carrega somente quando selecionado e
+processa a fila em segundo plano, mantendo a janela responsiva.
+
+Mantenha `--extra paddle` ao executar os comandos `uv sync`/`uv run` para
+preservar a instalação opcional. No Windows, `iniciar.bat` também preserva os
+pacotes opcionais já instalados. Sem a opção instalada, o seletor mostra a
+orientação de instalação; o Tesseract continua disponível.
+
+**Comparar** lê a mesma imagem com os dois mecanismos, mostra o texto do
+PaddleOCR e informa concordância ou divergência em data, valor e tipo. Nesse
+modo a confirmação é sempre manual. Se o PaddleOCR falhar, a leitura do
+Tesseract fica disponível para revisão. Nenhum mecanismo garante acerto de
+caracteres ou valores somente pela confiança informada.
+
+Para comparar texto, campos e tempo de execução localmente, sem alterar A1/A2:
+
+```sh
+uv run --frozen --extra paddle python scripts/comparar_ocr.py foto1.png foto2.jpg
+```
+
+O resultado JSON sai no terminal. Compare os campos com os valores verdadeiros
+do documento; a primeira imagem também inclui o tempo de carregar os modelos.
+Fotos reais ainda precisam ser avaliadas antes de mudar o mecanismo padrão.
+A captura exige igualdade numérica do valor com o lançamento do A1: `100,00`
+nunca corresponde a `1.100,00`, mesmo que a pesquisa textual encontre ambos.
 
 ### Filtro de créditos
 
@@ -193,6 +248,21 @@ compilação, ou você pode executar o código atualizado como descrito acima.
    O nome do arquivo foi mantido para compatibilidade; ele agora inclui créditos também.
 5. Em **Lista A2**, filtre, remova registros ou exporte a seleção para `No/N.txt`.
    A exportação contém todo o A2, na ordem das linhas originais.
+
+Para marcar um lançamento como **Atenção**, dê dois cliques em qualquer célula
+da linha na tabela **Conferência A1 × A2** (painel da direita). A linha ganha
+texto e fundo em tom amarelo; dê dois cliques novamente para remover a marcação.
+O novo cartão **Atenção**, com ícone amarelo no topo, conta as marcações visíveis,
+acompanhando a pesquisa e o filtro de débitos/créditos. A situação **OK** ou
+**FALTA NO A2** e os contadores financeiros continuam representando a comparação.
+
+As marcações são salvas automaticamente em `No/atencao.json` e reaparecem ao
+reabrir o programa no mesmo diretório. Elas usam a linha original e o texto do
+registro, tolerando diferenças de espaçamento. Se outra linha ou outro texto
+substituir aquele registro no A1, a marcação não é transferida. Inclua a pasta
+`No/` na cópia de segurança para preservar as marcações. O duplo clique no painel
+A1 à esquerda continua adicionando ao A2; o marcador de atenção atua somente
+no painel de conferência à direita.
 
 A pesquisa não muda o resultado da conferência: os lançamentos são comparados
 antes de filtrar a visualização, evitando que uma busca altere qual ocorrência

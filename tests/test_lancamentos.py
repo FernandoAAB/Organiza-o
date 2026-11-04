@@ -116,6 +116,21 @@ class LancamentosComSinalTests(unittest.TestCase):
             origem,
         )
 
+    def test_captura_exige_valor_exato_sem_buscar_parte_do_numero(self):
+        for registro in ('04/11/2026 Mercado 1.100,00D',
+                         '04/11/2026 Documento 10000 Mercado 99,99D'):
+            self.assertEqual(main.correspondencias_campos(
+                '04/11/2026', '100.00', 'D', [(1, registro)], []), [])
+
+    def test_captura_aceita_valores_brasileiros_e_decimais_equivalentes(self):
+        origem = [(1, '04/11/2026 Mercado 1.234,50D')]
+        for valor in ('1234.50', '1.234,50', '1234,5'):
+            self.assertEqual(main.correspondencias_campos(
+                '04/11/2026', valor, 'D', origem, []), origem)
+        for valor in ('NaN', 'Infinity', 'cem', '1.2.3', ''):
+            self.assertEqual(main.correspondencias_campos(
+                '04/11/2026', valor, 'D', origem, []), [])
+
     def test_valores_com_e_sem_sinal(self):
         for texto, tipo, valor in (
             ("Pagamento -700,00D", "D", "700.00"),

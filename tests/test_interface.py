@@ -1,6 +1,8 @@
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -55,6 +57,97 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(main.carregar_linhas("a2.txt"), ["[2] Crédito 200,00C"])
         self.assertEqual(self.app.var_falta.get(), "1")
 
+    def duplo_clique_conferencia(self, item="0", y=None):
+        tree = self.app.tree_deb
+        if y is None:
+            _, topo, _, altura = tree.bbox(item, "situacao")
+            y = topo + altura // 2
+        tempo = getattr(self, "_tempo_atencao", 3000)
+        self._tempo_atencao = tempo + 1000
+        for evento, instante in (("<ButtonPress-1>", tempo), ("<ButtonRelease-1>", tempo + 10),
+                                 ("<ButtonPress-1>", tempo + 100), ("<ButtonRelease-1>", tempo + 110)):
+            tree.event_generate(evento, x=180, y=y, time=instante)
+        self.app.update()
+
+    def test_atencao_duplo_clique_salva_reabre_e_remove_sem_alterar_a1_a2(self):
+        antes = [Path(nome).read_bytes() for nome in ("a1.txt", "a2.txt")]
+        self.duplo_clique_conferencia("1")
+        self.assertIn("atencao", self.app.tree_deb.item("1", "tags"))
+        self.assertNotIn("atencao", self.app.tree_deb.item("0", "tags"))
+        self.assertEqual(self.app.indicador_atencao.get(), "1")
+        self.assertEqual(self.app.tree_deb.set("1", "situacao"), "FALTA NO A2")
+        self.assertTrue(Path("No/atencao.json").is_file())
+        self.fechar_app()
+        self.app = main.App()
+        self.app.report_callback_exception = lambda *args: self.erros.append(args)
+        self.app.update()
+        self.assertIn("atencao", self.app.tree_deb.item("1", "tags"))
+        self.assertEqual(self.app.indicador_atencao.get(), "1")
+        self.duplo_clique_conferencia("1")
+        self.assertNotIn("atencao", self.app.tree_deb.item("1", "tags"))
+        self.assertEqual(main.carregar_atencoes(), set())
+        self.assertEqual([Path(nome).read_bytes() for nome in ("a1.txt", "a2.txt")], antes)
+
+    def test_atencao_acompanha_filtros_e_temas_mas_nao_muda_conferencia(self):
+        antes = main.calcular_lancamentos()
+        self.duplo_clique_conferencia("1")
+        for modo in ("Claro", "Escuro"):
+            self.app.mudar_tema(modo)
+            self.app.busca_var.set("Crédito")
+            self.app.buscar_a1()
+            self.assertIn("atencao", self.app.tree_deb.item("0", "tags"))
+            self.assertEqual(self.app.indicador_atencao.get(), "1")
+            self.assertEqual(str(self.app.tree_deb.tag_configure("atencao", "foreground")),
+                             main.cm("atencao", modo))
+            self.app.tipo_comparacao.set("Débitos")
+            self.assertEqual(self.app.indicador_atencao.get(), "0")
+            self.app.mostrar_todos()
+            self.app.tipo_comparacao.set("Todos")
+            self.assertEqual(self.app.indicador_atencao.get(), "1")
+        self.assertEqual(main.calcular_lancamentos(), antes)
+
+    def test_atencao_nao_transfere_marcacao_a_texto_alterado(self):
+        self.duplo_clique_conferencia("0")
+        Path("a1.txt").write_text("Outro pagamento 999,99D\n", encoding="utf-8")
+        self.app.atualizar_tudo()
+        self.assertNotIn("atencao", self.app.tree_deb.item("0", "tags"))
+        self.assertEqual(self.app.indicador_atencao.get(), "0")
+
+    def test_atencao_rejeita_linha_desatualizada(self):
+        Path("a1.txt").write_text("Outro pagamento 999,99D\n", encoding="utf-8")
+        self.duplo_clique_conferencia("0")
+        self.assertFalse(Path("No/atencao.json").exists())
+        self.assertIn("A1 foi alterado", self.app.status.get())
+
+    def test_atencao_cabecalho_e_vazio_nao_marcam_selecao_anterior(self):
+        self.app.tree_deb.selection_set("0")
+        for y in (5, self.app.tree_deb.winfo_height() - 5):
+            self.duplo_clique_conferencia(y=y)
+        self.assertFalse(Path("No/atencao.json").exists())
+        self.assertEqual(self.app.indicador_atencao.get(), "0")
+
+    def test_atencao_falha_de_gravacao_preserva_marcacoes_anteriores(self):
+        self.duplo_clique_conferencia("1")
+        antes = Path("No/atencao.json").read_bytes()
+        with patch.object(main, "salvar_atencoes", side_effect=PermissionError("Sem acesso")), \
+                patch.object(main.messagebox, "showerror") as mensagem:
+            self.duplo_clique_conferencia("0")
+        mensagem.assert_called_once()
+        self.assertEqual(Path("No/atencao.json").read_bytes(), antes)
+        self.assertNotIn("atencao", self.app.tree_deb.item("0", "tags"))
+        self.assertIn("atencao", self.app.tree_deb.item("1", "tags"))
+        self.assertEqual(self.app.indicador_atencao.get(), "1")
+
+    def test_atencao_arquivo_invalido_nao_e_sobrescrito(self):
+        Path("No").mkdir(exist_ok=True)
+        Path("No/atencao.json").write_text("arquivo incompleto", encoding="utf-8")
+        with patch.object(main.messagebox, "showerror") as mensagem:
+            self.duplo_clique_conferencia("0")
+        mensagem.assert_called_once()
+        self.assertEqual(Path("No/atencao.json").read_text(), "arquivo incompleto")
+        self.assertEqual(self.app.indicador_atencao.get(), "0")
+        self.assertNotIn("atencao", self.app.tree_deb.item("0", "tags"))
+
     def test_servidor_de_captura_pode_iniciar_parar_e_iniciar_novamente(self):
         self.app.iniciar_servidor_captura()
         self.app.update()
@@ -74,13 +167,68 @@ class InterfaceTests(unittest.TestCase):
         self.app.atualizar_tudo()
         with patch.object(main, "executar_ocr", return_value=(
                     "Mercado Teste\n03/11/2026\nTotal a pagar R$ 123,45\n",
-                    "aviso informativo do OCR")):
+                    "")):
             self.app.receber_captura(b"imagem ficticia", ".png")
             self.app.update_idletasks()
             self.app.update()
         self.assertEqual(main.carregar_linhas("a2.txt"),
                          ["[1] 03/11/2026 Mercado Teste 123,45D"])
         self.assertIsNone(self.app.captura_pendente)
+
+    def test_captura_incerta_aguarda_confirmacao_manual(self):
+        Path("a1.txt").write_text(
+            "04/11/2026 Mercado 123,45D\n", encoding="utf-8")
+        self.app.atualizar_tudo()
+        with patch.object(main, "executar_ocr", return_value=(
+                "Mercado\n04/11/2026\nTotal a pagar R$ 123,45", "Leitura incerta")):
+            self.app.receber_captura(b"imagem ficticia", ".png")
+            self.app.update()
+        self.assertEqual(main.carregar_linhas("a2.txt"), [])
+        self.assertIsNotNone(self.app.captura_pendente)
+        self.assertIn("Leitura incerta", self.app.captura_aviso.get())
+        self.app.confirmar_captura()
+        self.assertEqual(main.carregar_linhas("a2.txt"),
+                         ["[1] 04/11/2026 Mercado 123,45D"])
+
+    def test_captura_nao_adiciona_valor_parcial(self):
+        Path("a1.txt").write_text("04/11/2026 Mercado 1.100,00D\n", encoding="utf-8")
+        self.app.atualizar_tudo()
+        with patch.object(main, "executar_ocr", return_value=(
+                "Mercado\n04/11/2026\nTotal a pagar R$ 100,00", "")):
+            self.app.receber_captura(b"imagem ficticia", ".png")
+            self.app.update()
+        self.assertEqual(main.carregar_linhas("a2.txt"), [])
+        self.assertIn("não encontrado", self.app.captura_aviso.get())
+
+    def test_paddle_processa_sem_bloquear_interface_e_preserva_fila(self):
+        Path("a1.txt").write_text("04/11/2026 Mercado 123,45D\n", encoding="utf-8")
+        self.app.atualizar_tudo()
+        self.app.motor_ocr.set("PaddleOCR")
+        liberar = threading.Event()
+        def leitura(*args):
+            liberar.wait(timeout=3)
+            return "Mercado\n04/11/2026\nTotal a pagar R$ 123,45", "Leitura incerta"
+        with patch.object(main, "executar_ocr_motor", side_effect=leitura):
+            try:
+                self.app.receber_captura(b"foto um", ".png")
+                self.app.receber_captura(b"foto dois", ".png")
+                eventos = []
+                self.app.after_idle(lambda: eventos.append("janela responsiva"))
+                self.app.update()
+                self.assertEqual(eventos, ["janela responsiva"])
+                self.assertTrue(self.app.captura_processando)
+                self.assertEqual(len(self.app.capturas_fila), 1)
+                liberar.set()
+                limite = time.monotonic() + 3
+                while self.app.captura_processando and time.monotonic() < limite:
+                    self.app.update()
+                    time.sleep(0.01)
+                self.assertFalse(self.app.captura_processando)
+                self.assertIsNotNone(self.app.captura_pendente)
+                self.assertEqual(len(self.app.capturas_fila), 1)
+                self.assertEqual(main.carregar_linhas("a2.txt"), [])
+            finally:
+                liberar.set()
 
     def test_captura_nao_encontrada_no_a1_e_encerrada_com_aviso(self):
         Path("a1.txt").write_text(

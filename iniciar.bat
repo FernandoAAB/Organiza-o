@@ -10,7 +10,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-uv sync --frozen
+uv sync --frozen --inexact
 if errorlevel 1 (
   echo Não foi possível preparar as dependências. Confira a mensagem acima e a conexão.
   pause

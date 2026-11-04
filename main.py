@@ -1,7 +1,9 @@
 import json
+import queue
 import os
 import re
 import socket
+import sys
 import threading
 import webbrowser
 import tkinter as tk
@@ -14,7 +16,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from tkinter import ttk, messagebox
 from tkinter import font as tkfont
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, ImageTk
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat, ImageTk
 try:
     import pytesseract
 except ImportError:
@@ -25,11 +27,13 @@ except ImportError:
     qrcode = None
 
 import customtkinter as ctk  # pip install customtkinter
+import ocr_paddle  # Adaptador leve; os modelos só carregam quando selecionados.
 
 ARQUIVO_ORIGEM = "a1.txt"
 ARQUIVO_DESTINO = "a2.txt"
 PASTA_REG = "No"
 CONFIG = os.path.join(PASTA_REG, "config.json")
+ARQUIVO_ATENCAO = os.path.join(PASTA_REG, "atencao.json")
 TESSERACT_PORTATIL = Path(__file__).resolve().parent / "Tesseract-OCR"
 
 
@@ -52,6 +56,8 @@ TEMAS = {
     "vermelho": ("#e11d48", "#ff416c"),
     "marcado": ("#fef08a", "#3b2d54"),
     "captura": ("#ca8a04", "#facc15"),
+    "atencao": ("#854d0e", "#fde047"),
+    "atencao_fundo": ("#fff3c4", "#3d3214"),
     "perigo": ("#ffe4e6", "#4c1d24"),
     "perigo_hover": ("#fecdd3", "#6b2129"),
 }
@@ -169,6 +175,34 @@ def salvar_linhas(nome_arquivo, linhas):
             temporario.unlink(missing_ok=True)
 
 
+def chave_atencao(numero, texto):
+    return numero, " ".join(texto.split())
+
+
+def carregar_atencoes():
+    try:
+        with open(ARQUIVO_ATENCAO, encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
+    except FileNotFoundError:
+        return set()
+    if not isinstance(dados, dict) or dados.get("versao") != 1 or not isinstance(dados.get("marcacoes"), list):
+        raise ValueError("Arquivo de atenção inválido: " + ARQUIVO_ATENCAO)
+    marcacoes = set()
+    for item in dados["marcacoes"]:
+        if (not isinstance(item, dict) or type(item.get("linha")) is not int
+                or item["linha"] < 1 or not isinstance(item.get("registro"), str)):
+            raise ValueError("Marcação de atenção inválida: " + ARQUIVO_ATENCAO)
+        marcacoes.add(chave_atencao(item["linha"], item["registro"]))
+    return marcacoes
+
+
+def salvar_atencoes(marcacoes):
+    dados = {"versao": 1, "marcacoes": [
+        {"linha": numero, "registro": texto} for numero, texto in sorted(marcacoes)]}
+    Path(ARQUIVO_ATENCAO).parent.mkdir(parents=True, exist_ok=True)
+    salvar_linhas(ARQUIVO_ATENCAO, [json.dumps(dados, ensure_ascii=False, indent=2)])
+
+
 def interpretar_texto_documento(texto):
     """Extrai campos financeiros priorizando rótulos comuns de documentos."""
     padrao_valor = (
@@ -200,9 +234,23 @@ def interpretar_texto_documento(texto):
     }
 
 
+def normalizar_valor_captura(texto):
+    """Aceita dinheiro brasileiro e o decimal canônico retornado pelo OCR."""
+    texto = texto.strip()
+    if re.fullmatch(r"[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{1,2}", texto):
+        texto = texto.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"[+-]?\d+(?:\.\d{1,2})?", texto) is None:
+        raise ValueError("Informe um valor monetário válido.")
+    return abs(Decimal(texto))
+
+
 def correspondencias_campos(data, valor_texto, tipo, origem=None, destino=None):
-    """Localiza ocorrências livres usando a mesma busca tolerante do A1."""
+    """Exige igualdade monetária; a busca textual não valida dinheiro."""
     if not data or not valor_texto or tipo not in ("D", "C"):
+        return []
+    try:
+        valor = normalizar_valor_captura(valor_texto)
+    except (ValueError, ArithmeticError):
         return []
     origem = carregar_origem_numerada() if origem is None else origem
     destino = carregar_linhas(ARQUIVO_DESTINO) if destino is None else destino
@@ -217,7 +265,7 @@ def correspondencias_campos(data, valor_texto, tipo, origem=None, destino=None):
         if (numero not in conferidos and lancamento is not None
                 and lancamento[0] == tipo
                 and data_encontrada
-                and corresponde(valor_texto, registro)):
+                and lancamento[1] == valor):
             candidatos.append((numero, registro))
     return candidatos
 
@@ -229,31 +277,132 @@ def correspondencias_documento(texto, origem=None, destino=None):
                                    origem, destino)
 
 
+def preparar_imagens_ocr(original):
+    """Preserva traços finos e prepara leituras de recibos claros ou escuros."""
+    orientada = ImageOps.exif_transpose(original).convert("RGBA")
+    fundo = Image.new("RGBA", orientada.size, "white")
+    fundo.alpha_composite(orientada)
+    imagem = ImageOps.grayscale(fundo)
+    imagem = ImageOps.autocontrast(imagem, cutoff=1)
+    if ImageStat.Stat(imagem).mean[0] < 127:
+        imagem = ImageOps.invert(imagem)
+    # A projeção horizontal ajuda a alinhar linhas levemente inclinadas.
+    amostra = imagem.copy()
+    amostra.thumbnail((700, 700))
+    binaria = amostra.point(lambda p: 255 if p > 160 else 0)
+
+    def alinhamento(angulo):
+        girada = binaria.rotate(angulo, expand=True, fillcolor=255)
+        pixels = list(girada.getdata())
+        largura = girada.width
+        return sum((largura - sum(pixels[i:i + largura]) / 255) ** 2
+                   for i in range(0, len(pixels), largura))
+
+    base = alinhamento(0)
+    angulo = max(range(-6, 7), key=alinhamento)
+    if angulo and alinhamento(angulo) > base * 1.08:
+        imagem = imagem.rotate(angulo, Image.Resampling.BICUBIC,
+                               expand=True, fillcolor=255)
+    escala = min(3, 1800 / imagem.width, 4000 / max(imagem.size))
+    if escala != 1:
+        imagem = imagem.resize((max(1, round(imagem.width * escala)),
+                                 max(1, round(imagem.height * escala))),
+                                Image.Resampling.LANCZOS)
+    imagem = imagem.filter(ImageFilter.UnsharpMask(radius=1, percent=120, threshold=3))
+    # O limiar é calculado pela distribuição de tons (Otsu), não fixado na foto.
+    histograma = imagem.histogram()
+    total = sum(histograma)
+    soma = sum(i * n for i, n in enumerate(histograma))
+    peso = parcial = 0
+    melhor = -1
+    limiar = 127
+    for tom, quantidade in enumerate(histograma):
+        peso += quantidade
+        parcial += tom * quantidade
+        if not peso or peso == total:
+            continue
+        variancia = peso * (total - peso) * (
+            parcial / peso - (soma - parcial) / (total - peso)) ** 2
+        if variancia > melhor:
+            melhor, limiar = variancia, tom
+    contraste = imagem.point(lambda p: 255 if p > limiar else 0)
+    return [ImageOps.expand(item, border=24, fill=255) for item in (imagem, contraste)]
+
+
+def ler_resultado_ocr(dados):
+    """Reconstrói as linhas e mede a confiança ponderada pelo tamanho das palavras."""
+    linhas = {}
+    soma = peso = 0
+    for i, palavra in enumerate(dados["text"]):
+        palavra = palavra.strip()
+        confianca = float(dados["conf"][i])
+        if not palavra or confianca < 0:
+            continue
+        chave = tuple(dados[campo][i] for campo in ("page_num", "block_num", "par_num", "line_num"))
+        linhas.setdefault(chave, []).append(palavra)
+        soma += confianca * len(palavra)
+        peso += len(palavra)
+    return "\n".join(" ".join(linha) for linha in linhas.values()), soma / peso if peso else 0
+
+
 def executar_ocr(caminho):
     if pytesseract is None:
-        return "", "OCR local não instalado; preencha os campos manualmente."
+        return "", "OCR local não instalado."
     executavel = TESSERACT_PORTATIL / "tesseract.exe"
     tessdata = TESSERACT_PORTATIL / "tessdata"
-    configuracao = ""
-    if executavel.is_file():
+    # O executável portátil é exclusivo do Windows; no Linux usa o Tesseract local.
+    if sys.platform == "win32" and executavel.is_file():
         pytesseract.pytesseract.tesseract_cmd = str(executavel)
-        os.environ["TESSDATA_PREFIX"] = str(tessdata)
+    configuracao = '--tessdata-dir "' + str(tessdata) + '"' if (tessdata / "por.traineddata").is_file() else ""
+    candidatos = []
     try:
         with Image.open(caminho) as original:
-            imagem = ImageOps.exif_transpose(original).convert("L")
-            imagem = ImageOps.autocontrast(imagem)
-            if imagem.width < 1400:
-                escala = 1400 / imagem.width
-                imagem = imagem.resize(
-                    (1400, round(imagem.height * escala)), Image.Resampling.LANCZOS)
-            imagem = ImageEnhance.Sharpness(imagem).enhance(1.5)
-            imagem = imagem.filter(ImageFilter.MedianFilter(size=3))
-            texto = pytesseract.image_to_string(imagem, lang="por",
-                                                config=configuracao)
+            imagens = preparar_imagens_ocr(original)
+        for imagem, modo in zip(imagens, (6, 11)):
+            dados = pytesseract.image_to_data(
+                imagem, lang="por", output_type=pytesseract.Output.DICT,
+                config=f'{configuracao} --psm {modo} --dpi 300', timeout=20)
+            texto, confianca = ler_resultado_ocr(dados)
+            if texto.strip():
+                numeros_incertos = any(
+                    re.search(r"\d", palavra) and 0 <= float(conf) < 70
+                    for palavra, conf in zip(dados["text"], dados["conf"]))
+                candidatos.append((texto, confianca, numeros_incertos))
     except (OSError, ValueError, RuntimeError, pytesseract.TesseractNotFoundError,
             pytesseract.TesseractError) as erro:
-        return "", f"O OCR local não pôde ler a imagem: {erro}"
-    return texto, "" if texto.strip() else "Nenhum texto foi reconhecido; revise os campos manualmente."
+        if not candidatos:
+            return "", f"O OCR local não pôde ler a imagem: {erro}"
+        return candidatos[0][0], "Uma das leituras falhou; revise os campos antes de confirmar."
+    if not candidatos:
+        return "", "Nenhum texto foi reconhecido."
+    texto, confianca, numeros_incertos = max(candidatos, key=lambda item: item[1])
+    campos = [interpretar_texto_documento(item[0]) for item in candidatos]
+    divergencia = any(len({item[chave] for item in campos}) > 1
+                      for chave in ("data", "valor", "tipo"))
+    if divergencia or confianca < 80 or numeros_incertos:
+        return texto, "Leitura incerta: confira data, valor e tipo antes de confirmar."
+    return texto, ""
+
+
+def executar_ocr_motor(caminho, motor="Tesseract"):
+    if motor == "Tesseract":
+        return executar_ocr(caminho)
+    if motor not in ("PaddleOCR", "Comparar"):
+        return "", "Mecanismo de leitura desconhecido."
+    texto, aviso = ocr_paddle.executar_paddleocr(caminho)
+    if motor == "PaddleOCR":
+        return texto, aviso
+    texto_tesseract, aviso_tesseract = executar_ocr(caminho)
+    if not texto:
+        return texto_tesseract, aviso or "PaddleOCR indisponível; revise a leitura do Tesseract."
+    campos = interpretar_texto_documento(texto)
+    outros = interpretar_texto_documento(texto_tesseract)
+    iguais = bool(texto_tesseract) and all(campos[k] == outros[k] and campos[k]
+                                          for k in ("data", "valor", "tipo"))
+    resumo = ("Os mecanismos concordam em data, valor e tipo." if iguais else
+              "Há divergência ou campos ausentes entre os mecanismos.")
+    return texto, " ".join(item for item in (
+        resumo, aviso, aviso_tesseract, "Revise e confirme manualmente.") if item)
 
 
 class _CaptureHTTPServer(ThreadingHTTPServer):
@@ -597,6 +746,10 @@ def icone(nome, cor="cabecalho", tamanho=18):
             else:
                 d.line((48, 24, 48, 56), fill="white", width=9)
                 d.ellipse((43, 66, 53, 76), fill="white")
+        elif nome == "atencao":
+            d.polygon([(48, 7), (92, 85), (4, 85)], fill=tinta)
+            d.line((48, 32, 48, 57), fill=cm("painel", modo), width=8)
+            d.ellipse((44, 66, 52, 74), fill=cm("painel", modo))
         elif nome == "busca":
             d.ellipse((13, 10, 65, 62), outline=tinta, width=linha)
             d.line((59, 57, 84, 82), fill=tinta, width=linha)
@@ -685,6 +838,12 @@ class App(ctk.CTk):
         self.captura_pendente = None
         self.capturas_fila = []
         self.capturas_adicionadas = set()
+        erro_atencao = None
+        try:
+            self.atencoes = carregar_atencoes()
+        except (OSError, ValueError) as erro:
+            self.atencoes = set()
+            erro_atencao = str(erro)
 
         self.title("Sistema de Busca e Ordenação")
         largura = max(960, min(1360, self._reverse_window_scaling(self.winfo_screenwidth()) - 40))
@@ -732,6 +891,8 @@ class App(ctk.CTk):
         self.abas.bind("<Configure>", self.ajustar_escala_tabelas, add="+")
         self.atualizar_tudo()
         self.protocol("WM_DELETE_WINDOW", self.fechar)
+        if erro_atencao:
+            self.status.set("Não foi possível carregar as marcações de atenção: " + erro_atencao)
 
     def fechar(self):
         self.parar_servidor_captura()
@@ -929,16 +1090,16 @@ class App(ctk.CTk):
     def receber_captura(self, conteudo, extensao):
         self.capturas_fila.append((conteudo, extensao))
         self.atualizar_fila_captura()
-        if self.captura_pendente is not None:
+        if self.captura_pendente is not None or self.captura_processando:
             self.captura_aviso.set(
-                f"Foto recebida. A foto atual está aguardando revisão; "
+                f"Foto recebida. A foto atual está em leitura ou revisão; "
                 f"{len(self.capturas_fila)} foto(s) depois dela.")
             self.status.set(f"Foto recebida; {len(self.capturas_fila)} na fila.")
             return
         self.processar_proxima_captura()
 
     def processar_proxima_captura(self):
-        if self.captura_pendente is not None or not self.capturas_fila:
+        if self.captura_pendente is not None or self.captura_processando or not self.capturas_fila:
             return
         conteudo, extensao = self.capturas_fila.pop(0)
         self.atualizar_fila_captura()
@@ -948,15 +1109,42 @@ class App(ctk.CTk):
         self.captura_tipo.set("")
         self.captura_texto.delete("1.0", "end")
         self.captura_aviso.set("Processando a próxima foto...")
+        motor = self.motor_ocr.get()
+        if motor != "Tesseract":
+            self.captura_processando = True
+            self.atualizar_fila_captura()
+            self.captura_aviso.set("Lendo com " + motor + ". A primeira leitura pode preparar os modelos.")
+            def tarefa():
+                self.resultados_ocr.put(self.ler_imagem_captura(conteudo, extensao, motor))
+            threading.Thread(target=tarefa, daemon=True).start()
+            self.after(50, self.verificar_resultado_ocr)
+            return
+        self.apresentar_resultado_ocr(*self.ler_imagem_captura(conteudo, extensao, motor))
+
+    @staticmethod
+    def ler_imagem_captura(conteudo, extensao, motor):
         temporario = None
         try:
             with NamedTemporaryFile(suffix=extensao, delete=False) as arquivo:
                 arquivo.write(conteudo)
                 temporario = arquivo.name
-            texto, aviso = executar_ocr(temporario)
+            return executar_ocr_motor(temporario, motor)
+        except Exception as erro:
+            return "", f"Não foi possível ler a imagem: {erro}"
         finally:
             if temporario is not None:
                 Path(temporario).unlink(missing_ok=True)
+
+    def verificar_resultado_ocr(self):
+        try:
+            resultado = self.resultados_ocr.get_nowait()
+        except queue.Empty:
+            self.after(50, self.verificar_resultado_ocr)
+            return
+        self.captura_processando = False
+        self.apresentar_resultado_ocr(*resultado)
+
+    def apresentar_resultado_ocr(self, texto, aviso):
         campos = interpretar_texto_documento(texto)
         self.captura_descricao.set(campos["descricao"])
         self.captura_data.set(campos["data"])
@@ -970,8 +1158,8 @@ class App(ctk.CTk):
             self.atualizar_fila_captura()
             self.trocar_aba("Captura")
             self.captura_aviso.set(
-                "Não foi possível identificar a imagem. "
-                "Documento descartado e não adicionado ao A2.")
+                (aviso + " " if aviso else "Não foi possível identificar a imagem. ")
+                + "Documento descartado e não adicionado ao A2.")
             self.status.set("Imagem não identificada; documento descartado.")
             self.processar_proxima_captura()
             return
@@ -981,7 +1169,8 @@ class App(ctk.CTk):
             aviso or "Foto pronta. Confira os campos e verifique no A1.")
         self.trocar_aba("Captura")
         self.status.set("Documento recebido para revisão.")
-        self.after_idle(lambda: self.confirmar_captura(automatico=True))
+        if not aviso:
+            self.after_idle(lambda: self.confirmar_captura(automatico=True))
 
     def confirmar_captura(self, automatico=False):
         if self.captura_pendente is None:
@@ -1000,7 +1189,7 @@ class App(ctk.CTk):
                 messagebox.showwarning("Revisão necessária", mensagem, parent=self)
             return
         try:
-            numero = Decimal(valor.replace(".", "").replace(",", "."))
+            numero = normalizar_valor_captura(valor)
         except (ValueError, ArithmeticError):
             mensagem = "Informe um valor brasileiro válido."
             if automatico:
@@ -1051,6 +1240,9 @@ class App(ctk.CTk):
         self.processar_proxima_captura()
 
     def _montar_aba_captura(self):
+        self.captura_processando = False
+        self.resultados_ocr = queue.Queue()
+        self.motor_ocr = tk.StringVar(value="Tesseract")
         self.aba_captura.grid_columnconfigure(0, weight=1)
         self.aba_captura.grid_columnconfigure(1, weight=1)
         cabecalho = ctk.CTkFrame(self.aba_captura, fg_color="transparent")
@@ -1075,6 +1267,13 @@ class App(ctk.CTk):
                    primario=True, largura=180).pack(pady=(14, 6))
         self.botao(esquerda, "Parar servidor", self.parar_servidor_captura,
                    largura=180).pack()
+        seletor = ctk.CTkFrame(esquerda, fg_color="transparent")
+        seletor.pack(fill="x", pady=(12, 4))
+        ctk.CTkLabel(seletor, text="Leitura da imagem", text_color=c("cinza"),
+                     font=(FONTE, 12)).pack()
+        ctk.CTkOptionMenu(seletor, variable=self.motor_ocr,
+                          values=["Tesseract", "PaddleOCR", "Comparar"],
+                          width=180).pack(pady=4)
         self.captura_aviso = tk.StringVar(value="Nenhum documento recebido.")
         ctk.CTkLabel(direita, textvariable=self.captura_aviso, wraplength=460,
                      text_color=c("cinza"), justify="left").pack(anchor="w", pady=(4, 10))
@@ -1099,7 +1298,7 @@ class App(ctk.CTk):
                    primario=True, largura=250).pack(anchor="e", pady=(10, 4))
 
     def atualizar_fila_captura(self):
-        pendente = 1 if self.captura_pendente is not None else 0
+        pendente = 1 if self.captura_pendente is not None or self.captura_processando else 0
         self.fila_captura.set(f"Fila: {pendente + len(self.capturas_fila)} foto(s)")
 
     def mudar_tema(self, modo):
@@ -1130,6 +1329,8 @@ class App(ctk.CTk):
         estilizar_tabelas(self.modo, normal, self.painel_busca._apply_widget_scaling(1))
         self.tree_busca.tag_configure("ja", foreground=cm("cinza", self.modo))
         self.tree_busca.tag_configure("novo", foreground=cm("texto", self.modo))
+        self.tree_deb.tag_configure("atencao", foreground=cm("atencao", self.modo),
+                                    background=cm("atencao_fundo", self.modo))
         self.tree_deb.tag_configure("falta", foreground=cm("vermelho", self.modo))
         self.tree_deb.tag_configure("ok", foreground=cm("verde", self.modo))
         self.tree_deb.tag_configure("captura", foreground=cm("captura", self.modo))
@@ -1183,11 +1384,13 @@ class App(ctk.CTk):
         self.indicador_origem = tk.StringVar(value="0")
         self.indicador_ok = tk.StringVar(value="0")
         self.indicador_falta = tk.StringVar(value="0")
+        self.indicador_atencao = tk.StringVar(value="0")
         self.cartoes_resumo = []
         for coluna, (variavel, titulo, simbolo, cor) in enumerate((
                 (self.indicador_origem, "Registros A1", "arquivo", "cabecalho"),
                 (self.indicador_ok, "Conferidos", "confirmado", "verde"),
-                (self.indicador_falta, "Faltando no A2", "alerta", "vermelho"))):
+                (self.indicador_falta, "Faltando no A2", "alerta", "vermelho"),
+                (self.indicador_atencao, "Atenção", "atencao", "atencao"))):
             cartao = ctk.CTkFrame(indicadores, height=44, width=132, corner_radius=5,
                                    fg_color=c("painel"), border_width=1, border_color=c("borda"))
             cartao.grid(row=0, column=coluna, padx=(0 if coluna == 0 else 6, 0))
@@ -1463,6 +1666,45 @@ class App(ctk.CTk):
         self.botao(rodape, "Atualizar", self.atualizar_tudo,
                    largura=108, altura=32).pack(side="right", padx=(0, 10))
         self.tree_deb.bind("<<TreeviewSelect>>", lambda e: self.sincronizar_selecao(self.tree_deb, self.tree_busca))
+        self.tree_deb.bind("<Double-1>", self.alternar_atencao)
+
+    def alternar_atencao(self, evento):
+        if self.tree_deb.identify_region(evento.x, evento.y) != "cell":
+            return
+        item = self.tree_deb.identify_row(evento.y)
+        if not item:
+            return
+        numero = int(self.tree_deb.set(item, "linha"))
+        texto = self.tree_deb.set(item, "texto")
+        atual = dict(carregar_origem_numerada()).get(numero)
+        if atual is None or chave_atencao(numero, atual) != chave_atencao(numero, texto):
+            self.buscar_a1()
+            self.status.set("O A1 foi alterado. Confira a lista antes de marcar atenção.")
+            return "break"
+        chave = chave_atencao(numero, texto)
+        try:
+            marcacoes = carregar_atencoes()
+            marcou = chave not in marcacoes
+            marcacoes.symmetric_difference_update({chave})
+            salvar_atencoes(marcacoes)
+        except (OSError, ValueError) as erro:
+            self.status.set("Não foi possível salvar a marcação de atenção.")
+            messagebox.showerror("Marcação de atenção", str(erro), parent=self)
+            return "break"
+        self.atencoes = marcacoes
+        # Atualiza somente as tags para preservar seleção, foco e rolagem.
+        for iid in self.tree_deb.get_children():
+            tags = list(self.tree_deb.item(iid, "tags"))
+            tags = [tag for tag in tags if tag != "atencao"]
+            identidade = chave_atencao(int(self.tree_deb.set(iid, "linha")),
+                                       self.tree_deb.set(iid, "texto"))
+            if identidade in self.atencoes:
+                tags.insert(0, "atencao")
+            self.tree_deb.item(iid, tags=tags)
+        self.indicador_atencao.set(str(sum(
+            "atencao" in self.tree_deb.item(iid, "tags") for iid in self.tree_deb.get_children())))
+        self.status.set(f"Linha A1 {numero}: atenção {'marcada' if marcou else 'removida'} e salva.")
+        return "break"
 
     def tipo_selecionado(self):
         return {"Todos": None, "Débitos": "D", "Créditos": "C"}[self.tipo_comparacao.get()]
@@ -1478,6 +1720,8 @@ class App(ctk.CTk):
             situacao = "OK" if ok else "FALTA NO A2"
             status_tag = "captura" if numero in self.capturas_adicionadas else ("ok" if ok else "falta")
             tags = [status_tag, "alternada" if i % 2 else "normal"]
+            if chave_atencao(numero, texto) in self.atencoes:
+                tags.insert(0, "atencao")
             self.tree_deb.insert("", "end", iid=str(i),
                                  values=(i + 1, numero, texto, situacao, formatar_valor_registro(texto)), tags=tuple(tags))
         self.ajustar_largura_registro(self.tree_deb)
@@ -1487,6 +1731,8 @@ class App(ctk.CTk):
         self.indicador_origem.set(str(len(self.resultados)))
         self.indicador_ok.set(str(total - faltando))
         self.indicador_falta.set(str(faltando))
+        self.indicador_atencao.set(str(sum(
+            chave_atencao(numero, texto) in self.atencoes for numero, texto, _ in resultado)))
         self.atualizar_contadores()
         self.sincronizar_selecao(self.tree_busca, self.tree_deb)
         if self.abas.get() == "Buscar e comparar":
