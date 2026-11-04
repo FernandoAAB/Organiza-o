@@ -497,10 +497,10 @@ class _UploadHandler(BaseHTTPRequestHandler):
             const linha = document.createElement('li');
             lista.appendChild(linha);
             if (arquivo.size === 0 || arquivo.size > 15 * 1024 * 1024) {
-              linha.textContent = arquivo.name + ': arquivo vazio ou maior que 15 MB.';
+              linha.textContent = 'Arquivo vazio ou maior que 15 MB.';
               continue;
             }
-            linha.textContent = arquivo.name + ': aguardando envio.';
+            linha.textContent = 'Aguardando envio…';
             filaEnvios.push({arquivo, linha});
           }
           entrada.value = '';
@@ -518,7 +518,7 @@ class _UploadHandler(BaseHTTPRequestHandler):
             if (concluida) return;
             concluida = true;
             if (recebida) { confirmados++; progresso.value = 100; }
-            tarefa.linha.textContent = tarefa.arquivo.name + ': ' + aviso;
+            tarefa.linha.textContent = aviso;
             filaEnvios.shift();
             enviando = false;
             atualizarEnvios();
@@ -531,14 +531,14 @@ class _UploadHandler(BaseHTTPRequestHandler):
             if (!evento.lengthComputable) return;
             const percentual = Math.round(100 * evento.loaded / evento.total);
             progresso.value = percentual;
-            tarefa.linha.textContent = tarefa.arquivo.name + (percentual < 100
-              ? ': enviando ' + percentual + '%.' : ': aguardando confirmação do computador.');
+            tarefa.linha.textContent = percentual < 100
+              ? 'Enviando — ' + percentual + '%' : 'Aguardando confirmação…';
           };
           xhr.onload = () => {
             if (xhr.status === 200) {
               let folha = '';
               try { folha = JSON.parse(xhr.responseText).folhas[0] || ''; } catch (erro) {}
-              terminar(true, (folha ? 'Folha ' + folha + ': ' : '') + 'recebida e salva na fila do computador.');
+              terminar(true, folha ? 'Folha ' + folha + ' — recebida.' : 'Folha recebida.');
               consultarPainel();
             } else if (xhr.status === 503) {
               terminar(false, 'o computador não conseguiu salvar. Confira o armazenamento e envie novamente.');
@@ -553,7 +553,7 @@ class _UploadHandler(BaseHTTPRequestHandler):
           xhr.onabort = semConfirmacao;
           const dados = new FormData();
           dados.append('documento', tarefa.arquivo, tarefa.arquivo.name);
-          tarefa.linha.textContent = tarefa.arquivo.name + ': enviando...';
+          tarefa.linha.textContent = 'Enviando…';
           try { xhr.send(dados); } catch (erro) { semConfirmacao(); }
         }
         let paginaFolhas = 0;
