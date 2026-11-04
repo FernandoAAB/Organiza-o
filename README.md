@@ -95,7 +95,12 @@ dispositivos precisam estar na mesma rede Wi-Fi). Se o QR Code estiver
 disponível, ele também pode ser escaneado.
 
 Depois do envio, o OCR local preenche uma revisão com descrição, data, valor e
-tipo (`D` para débito ou `C` para crédito). Revise e edite os campos e clique em
+tipo (`D` para débito ou `C` para crédito). A descrição é apenas informativa:
+pode ser diferente do histórico do extrato ou estar vazia, sem impedir a busca.
+Ela fica disponível para consulta, sem edição. A localização no A1 considera
+somente **data, valor exato e tipo D/C**; se esses três campos coincidirem em
+mais de um lançamento, a inclusão automática aguarda revisão.
+Revise e edite data, valor e tipo e clique em
 **Verificar no A1 e adicionar ao A2**. O programa só inclui automaticamente
 quando encontra uma única linha do A1 com a mesma data, valor e tipo D/C.
 Antes de reconhecer o texto, a imagem tem orientação, pequenas inclinações,

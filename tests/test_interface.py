@@ -192,6 +192,25 @@ class InterfaceTests(unittest.TestCase):
                          ["[1] 03/11/2026 Mercado Teste 123,45D"])
         self.assertIsNone(self.app.captura_pendente)
 
+    def test_descricao_vazia_ou_diferente_nao_bloqueia_busca_por_campos(self):
+        Path("a1.txt").write_text("04/11/2026 HISTORICO DO EXTRATO 345,67D\n", encoding="utf-8")
+        for descricao in ("", "Nome diferente reconhecido na foto"):
+            for aviso in ("", "Leitura incerta"):
+                with self.subTest(descricao=descricao, aviso=aviso):
+                    Path("a2.txt").write_text("", encoding="utf-8")
+                    campos = dict(descricao=descricao, data="04/11/2026", valor="345.67", tipo="D")
+                    with patch.object(main, "interpretar_texto_documento", return_value=campos):
+                        self.app.apresentar_resultado_ocr("texto da foto", aviso)
+                    self.app.update()
+                    if aviso:
+                        self.assertIsNotNone(self.app.captura_pendente)
+                        self.app.confirmar_captura()
+                    self.app.update()
+                    self.assertEqual(main.carregar_linhas("a2.txt"),
+                                     ["[1] 04/11/2026 HISTORICO DO EXTRATO 345,67D"])
+                    self.assertEqual(self.app.captura_descricao.get(), descricao)
+                    self.assertIsNone(self.app.captura_pendente)
+
     def test_captura_incerta_aguarda_confirmacao_manual(self):
         Path("a1.txt").write_text(
             "04/11/2026 Mercado 123,45D\n", encoding="utf-8")

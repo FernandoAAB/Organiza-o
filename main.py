@@ -255,7 +255,7 @@ def normalizar_valor_captura(texto):
 
 
 def correspondencias_campos(data, valor_texto, tipo, origem=None, destino=None):
-    """Exige igualdade monetária; a busca textual não valida dinheiro."""
+    """Busca por data, valor monetário exato e tipo; a descrição é informativa."""
     if not data or not valor_texto or tipo not in ("D", "C"):
         return []
     try:
@@ -1298,8 +1298,7 @@ class App(ctk.CTk):
         self.captura_tipo.set(campos["tipo"])
         self.captura_texto.delete("1.0", "end")
         self.captura_texto.insert("1.0", texto)
-        if not campos["descricao"] or not campos["data"] or not campos["valor"] \
-                or campos["tipo"] not in ("D", "C"):
+        if not campos["data"] or not campos["valor"] or campos["tipo"] not in ("D", "C"):
             self.finalizar_foto_captura("descartada")
             self.captura_pendente = None
             self.atualizar_fila_captura()
@@ -1325,12 +1324,11 @@ class App(ctk.CTk):
         if self.captura_pendente is None:
             self.status.set("Envie uma imagem antes de confirmar.")
             return
-        descricao = self.captura_descricao.get().strip()
         valor = self.captura_valor.get().strip()
         tipo = self.captura_tipo.get().strip().upper()
         data = self.captura_data.get().strip()
-        if not descricao or not data or not valor or tipo not in ("D", "C"):
-            mensagem = "Informe descrição, data, valor e tipo D ou C."
+        if not data or not valor or tipo not in ("D", "C"):
+            mensagem = "Informe data, valor e tipo D ou C."
             if automatico:
                 self.captura_aviso.set(f"Validação pendente: {mensagem}")
                 self.status.set("A validação automática precisa de revisão.")
@@ -1440,7 +1438,7 @@ class App(ctk.CTk):
         self.fila_captura = tk.StringVar(value="Fila: 0 foto(s)")
         ctk.CTkLabel(direita, textvariable=self.fila_captura,
                      text_color=c("cinza"), font=(FONTE, 11)).pack(anchor="w", pady=(0, 6))
-        campos = (("Descrição", "captura_descricao"), ("Data", "captura_data"),
+        campos = (("Descrição (informativa)", "captura_descricao"), ("Data", "captura_data"),
                   ("Valor", "captura_valor"), ("Tipo (D/C)", "captura_tipo"))
         for titulo, atributo in campos:
             ctk.CTkLabel(direita, text=titulo, text_color=c("cinza"),
@@ -1448,7 +1446,10 @@ class App(ctk.CTk):
             variavel = tk.StringVar()
             setattr(self, atributo, variavel)
             variavel.trace_add("write", self.salvar_revisao_captura)
-            self.campo(direita, variavel, titulo).pack(fill="x")
+            campo = self.campo(direita, variavel, titulo)
+            if atributo == "captura_descricao":
+                campo.configure(state="readonly")
+            campo.pack(fill="x")
         ctk.CTkLabel(direita, text="Texto reconhecido", text_color=c("cinza"),
                      font=(FONTE, 12)).pack(anchor="w", pady=(8, 2))
         self.captura_texto = tk.Text(direita, height=8, wrap="word",
