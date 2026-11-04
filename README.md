@@ -334,3 +334,7 @@ para agentes estão em [AGENTS.md](AGENTS.md).
 As práticas foram adaptadas do repositório [mattpocock/skills](https://github.com/mattpocock/skills/tree/5beb35b040e3de97e54fa9e386d7e42d15c295c2),
 especialmente [writing-for-agents](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/writing-for-agents/SKILL.md)
 e as recomendações de [testes por comportamento](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/engineering/tdd/tests.md).
+
+## Guia dos arquivos
+
+Consulte os [comentários de cada arquivo](docs/ARQUIVOS.md) para entender a estrutura do projeto e os componentes distribuídos com o Tesseract.

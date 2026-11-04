@@ -1,3 +1,4 @@
+# Entrada de validação: --require-gui transforma qualquer teste ignorado em falha da execução.
 """Executa a suíte existente, com validação gráfica completa opcional."""
 
 import argparse

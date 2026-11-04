@@ -1,3 +1,4 @@
+# Simula o PaddleOCR para validar ordenação, confiança e falhas sem baixar modelos.
 """Integração opcional sem baixar modelos durante a suíte."""
 import unittest
 import math

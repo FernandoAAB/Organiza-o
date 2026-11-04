@@ -1,3 +1,5 @@
+# Aplicativo desktop: reúne a conferência A1 × A2, a interface e a captura de documentos.
+# Os dados de uso ficam no diretório de execução; o Tesseract portátil é localizado junto deste módulo.
 import json
 import queue
 import os
@@ -29,6 +31,7 @@ except ImportError:
 import customtkinter as ctk  # pip install customtkinter
 import ocr_paddle  # Adaptador leve; os modelos só carregam quando selecionados.
 
+# A1 guarda a origem; A2 registra os itens escolhidos com a referência da linha original.
 ARQUIVO_ORIGEM = "a1.txt"
 ARQUIVO_DESTINO = "a2.txt"
 PASTA_REG = "No"
@@ -277,6 +280,7 @@ def correspondencias_documento(texto, origem=None, destino=None):
                                    origem, destino)
 
 
+# O pré-processamento gera alternativas locais antes de escolher a leitura do documento.
 def preparar_imagens_ocr(original):
     """Preserva traços finos e prepara leituras de recibos claros ou escuros."""
     orientada = ImageOps.exif_transpose(original).convert("RGBA")
@@ -410,6 +414,7 @@ class _CaptureHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
 
+# Recebe a foto pelo servidor local e encaminha o conteúdo para a rotina de captura.
 class _UploadHandler(BaseHTTPRequestHandler):
     server_version = "OrganizacaoCapture/1.0"
 
@@ -579,6 +584,7 @@ def extrair_valor_debito(texto):
     return lancamento[1] if lancamento is not None and lancamento[0] == "D" else None
 
 
+# Resolve as referências do A2 antes de aplicar filtros de exibição.
 def referencias_no_destino(origem, destino):
     """Reconhece referências que apontam para a mesma linha do A1."""
     textos = {numero: " ".join(texto.split()) for numero, texto in origem}

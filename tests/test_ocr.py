@@ -1,3 +1,4 @@
+# Usa resultados simulados para verificar o tratamento do OCR sem depender do executável externo.
 """Contratos do OCR: preservação de linhas e revisão de leituras incertas."""
 import tempfile
 import unittest

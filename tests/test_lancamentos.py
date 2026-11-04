@@ -1,3 +1,4 @@
+# Testes das regras financeiras, referências de linha e captura, sem usar os dados pessoais do projeto.
 import tempfile
 import unittest
 import threading

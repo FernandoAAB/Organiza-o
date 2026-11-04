@@ -1,3 +1,4 @@
+# Testes dos controles e interações da interface usando dados temporários; exigem sessão gráfica.
 import os
 import sys
 import tempfile

@@ -1,3 +1,4 @@
+# Adaptador opcional: importar este módulo não inicializa o PaddleOCR nem baixa modelos.
 """PaddleOCR opcional: carrega modelos só quando solicitado e processa localmente."""
 import re
 import math

@@ -1,3 +1,4 @@
+# Ferramenta de diagnóstico: executa ambos os motores nas mesmas imagens e imprime um resumo JSON.
 """Compara localmente texto, campos e tempo dos dois mecanismos na mesma imagem."""
 import argparse
 import json
