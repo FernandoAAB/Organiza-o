@@ -2,6 +2,7 @@
 # Os dados de uso ficam no diretório de execução; o Tesseract portátil é localizado junto deste módulo.
 import json
 import csv
+import sqlite3
 import io
 import subprocess
 import multiprocessing
@@ -33,6 +34,7 @@ except ImportError:
     qrcode = None
 
 import customtkinter as ctk  # pip install customtkinter
+from fila_ocr import FilaOCR
 from ocr_runtime import ExecutorOCR
 import ocr_paddle  # Adaptador leve; os modelos só carregam quando selecionados.
 
@@ -557,8 +559,16 @@ automaticamente.</p>
         if not arquivos:
             self.send_error(400, "Nenhuma imagem foi enviada")
             return
-        for conteudo, extensao in arquivos:
-            self.server.captura_callback(conteudo, extensao)
+        try:
+            lote = getattr(self.server, "captura_lote_callback", None)
+            if lote is not None:
+                lote(arquivos)
+            else:
+                for conteudo, extensao in arquivos:
+                    self.server.captura_callback(conteudo, extensao)
+        except Exception:
+            self.send_error(503, "Nao foi possivel salvar na fila local. Tente novamente.")
+            return
         dados = self.pagina_upload(
             f"{len(arquivos)} foto(s) recebida(s). Você pode selecionar e enviar mais."
         ).encode("utf-8")
@@ -881,7 +891,6 @@ class App(ctk.CTk):
         self.servidor_captura = None
         self.thread_servidor_captura = None
         self.captura_pendente = None
-        self.capturas_fila = []
         self.capturas_adicionadas = set()
         erro_atencao = None
         try:
@@ -940,8 +949,13 @@ class App(ctk.CTk):
             self.status.set("Não foi possível carregar as marcações de atenção: " + erro_atencao)
 
     def fechar(self):
-        self.executor_ocr.fechar()
+        self.encerrando = True
+        self.salvar_revisao_captura()
         self.parar_servidor_captura()
+        self.executor_ocr.fechar()
+        if self.thread_ocr is not None:
+            self.thread_ocr.join(timeout=2)
+        self.fila_ocr.fechar()
         self.destroy()
 
     def report_callback_exception(self, exc, valor, traceback):
@@ -1123,8 +1137,8 @@ class App(ctk.CTk):
             self.status.set("Não foi possível iniciar o servidor de captura.")
             messagebox.showerror("Servidor de captura", str(erro), parent=self)
             return
-        servidor.captura_callback = lambda conteudo, extensao: (
-            self.entradas_captura.put((conteudo, extensao)))
+        servidor.captura_callback = self.fila_ocr.adicionar
+        servidor.captura_lote_callback = self.fila_ocr.adicionar_lote
         self.servidor_captura = servidor
         self.thread_servidor_captura = threading.Thread(
             target=servidor.serve_forever, daemon=True)
@@ -1156,18 +1170,29 @@ class App(ctk.CTk):
         self.qr_captura.configure(text="", image=self.qr_imagem)
 
     def receber_fotos_enfileiradas(self):
-        # Só a thread da interface toca nos widgets; a rede apenas entrega dados.
-        for _ in range(10):
-            try:
-                conteudo, extensao = self.entradas_captura.get_nowait()
-            except queue.Empty:
-                break
-            self.receber_captura(conteudo, extensao)
-        self.after(50, self.receber_fotos_enfileiradas)
+        try:
+            self.atualizar_fila_captura()
+            self.processar_proxima_captura()
+        except (OSError, sqlite3.Error) as erro:
+            self.status.set(f"Não foi possível acessar a fila local: {erro}")
+        finally:
+            self.after(250, self.receber_fotos_enfileiradas)
+
+    def salvar_revisao_captura(self, *_):
+        if self.captura_id is not None and self.captura_pendente is not None and not self.restaurando_revisao:
+            campos = {nome: getattr(self, "captura_" + nome).get()
+                      for nome in ("descricao", "data", "valor", "tipo")}
+            self.fila_ocr.salvar_campos(self.captura_id, campos)
+
+    def finalizar_foto_captura(self, estado):
+        if self.captura_id is not None:
+            self.fila_ocr.finalizar(self.captura_id, estado)
+            self.captura_id = None
 
     def descartar_captura(self):
         if self.captura_processando or self.captura_pendente is None:
             return
+        self.finalizar_foto_captura("descartada")
         self.captura_pendente = None
         self.atualizar_fila_captura()
         self.captura_aviso.set("Documento descartado e não adicionado ao A2.")
@@ -1175,21 +1200,33 @@ class App(ctk.CTk):
         self.after_idle(self.processar_proxima_captura)
 
     def receber_captura(self, conteudo, extensao):
-        self.capturas_fila.append((conteudo, extensao))
+        self.fila_ocr.adicionar(conteudo, extensao)
         self.atualizar_fila_captura()
         if self.captura_pendente is not None or self.captura_processando:
             if self.captura_pendente is None:
                 self.captura_aviso.set(
                     f"Foto recebida. A foto atual está em leitura; "
-                    f"{len(self.capturas_fila)} foto(s) depois dela.")
-            self.status.set(f"Foto recebida; {len(self.capturas_fila)} na fila.")
+                    f"{self.fila_ocr.quantidade('aguardando')} foto(s) depois dela.")
+            self.status.set(f"Foto recebida; {self.fila_ocr.quantidade('aguardando')} na fila.")
             return
         self.processar_proxima_captura()
 
     def processar_proxima_captura(self):
-        if self.captura_pendente is not None or self.captura_processando or not self.capturas_fila:
+        if self.captura_pendente is not None or self.captura_processando or self.fila_pausada:
             return
-        conteudo, extensao = self.capturas_fila.pop(0)
+        foto = self.fila_ocr.proxima(self.motor_ocr.get())
+        if foto is None:
+            return
+        self.captura_id = foto['id']
+        if foto['estado'] == 'revisao':
+            self.restaurando_revisao = True
+            try:
+                self.apresentar_resultado_ocr(foto['texto'], foto['aviso'] or "Documento recuperado; revise antes de confirmar.")
+                for nome, valor in json.loads(foto['campos']).items():
+                    getattr(self, 'captura_' + nome).set(valor)
+            finally:
+                self.restaurando_revisao = False
+            return
         self.atualizar_fila_captura()
         self.captura_descricao.set("")
         self.captura_data.set("")
@@ -1197,17 +1234,27 @@ class App(ctk.CTk):
         self.captura_tipo.set("")
         self.captura_texto.delete("1.0", "end")
         self.captura_aviso.set("Processando a próxima foto...")
-        motor = self.motor_ocr.get()
+        motor = foto['motor']
         self.captura_processando = True
         self.atualizar_fila_captura()
         self.captura_aviso.set("Lendo com " + motor + ". Aguarde o processamento.")
         def tarefa():
             try:
-                resultado = self.executor_ocr.ler(conteudo, extensao, motor)
+                conteudo = self.fila_ocr.caminho(foto).read_bytes()
+                resultado = self.executor_ocr.ler(conteudo, foto['extensao'], motor)
             except Exception as erro:
                 resultado = ("", f"Não foi possível ler a imagem: {erro}")
-            self.resultados_ocr.put(resultado)
-        threading.Thread(target=tarefa, daemon=True).start()
+            if self.encerrando:
+                return  # Mantém 'processando' para retomar ao reabrir.
+            salvo = True
+            try:
+                self.fila_ocr.resultado(foto['id'], *resultado, interpretar_texto_documento(resultado[0]))
+            except (OSError, sqlite3.Error) as erro:
+                salvo = False
+                resultado = ("", f"Fila pausada: não foi possível salvar o resultado: {erro}. A foto foi preservada; verifique o disco e reabra o programa.")
+            self.resultados_ocr.put((*resultado, salvo))
+        self.thread_ocr = threading.Thread(target=tarefa, daemon=True)
+        self.thread_ocr.start()
         self.after(50, self.verificar_resultado_ocr)
 
     @staticmethod
@@ -1235,7 +1282,13 @@ class App(ctk.CTk):
             self.after(50, self.verificar_resultado_ocr)
             return
         self.captura_processando = False
-        self.apresentar_resultado_ocr(*resultado)
+        texto, aviso, salvo = resultado
+        if not salvo:
+            self.fila_pausada = True
+            self.captura_aviso.set(aviso)
+            self.status.set("Fila pausada para preservar a foto. Verifique o armazenamento.")
+            return
+        self.apresentar_resultado_ocr(texto, aviso)
 
     def apresentar_resultado_ocr(self, texto, aviso):
         campos = interpretar_texto_documento(texto)
@@ -1247,6 +1300,7 @@ class App(ctk.CTk):
         self.captura_texto.insert("1.0", texto)
         if not campos["descricao"] or not campos["data"] or not campos["valor"] \
                 or campos["tipo"] not in ("D", "C"):
+            self.finalizar_foto_captura("descartada")
             self.captura_pendente = None
             self.atualizar_fila_captura()
             self.trocar_aba("Captura")
@@ -1307,6 +1361,7 @@ class App(ctk.CTk):
             self.captura_aviso.set(
                 "Documento não encontrado no A1. Não foi adicionado ao A2.")
             self.status.set("Documento não encontrado no A1.")
+            self.finalizar_foto_captura("descartada")
             self.captura_pendente = None
             self.atualizar_fila_captura()
             self.processar_proxima_captura()
@@ -1323,9 +1378,10 @@ class App(ctk.CTk):
         destino.sort(key=extrair_numero)
         salvar_linhas(ARQUIVO_DESTINO, destino)
         self.capturas_adicionadas.add(numero_a1)
+        self.finalizar_foto_captura("concluida")
         self.captura_pendente = None
         self.atualizar_fila_captura()
-        aguardando = len(self.capturas_fila)
+        aguardando = self.fila_ocr.quantidade("aguardando")
         self.captura_aviso.set(
             f"Linha A1 {numero_a1} adicionada ao A2 e marcada na conferência. "
             f"{aguardando} foto(s) aguardando." if aguardando else
@@ -1338,8 +1394,14 @@ class App(ctk.CTk):
         self.captura_processando = False
         self.executor_ocr = ExecutorOCR()
         self.resultados_ocr = queue.Queue()
-        self.entradas_captura = queue.Queue()
-        self.after(50, self.receber_fotos_enfileiradas)
+        self.fila_ocr = FilaOCR(Path(PASTA_REG) / "capturas", exclusivo=True)
+        self.fila_ocr.recuperar()
+        self.captura_id = None
+        self.fila_pausada = False
+        self.encerrando = False
+        self.restaurando_revisao = False
+        self.thread_ocr = None
+        self.after(250, self.receber_fotos_enfileiradas)
         self.motor_ocr = tk.StringVar(value="Tesseract")
         self.aba_captura.grid_columnconfigure(0, weight=1)
         self.aba_captura.grid_columnconfigure(1, weight=1)
@@ -1385,6 +1447,7 @@ class App(ctk.CTk):
                          font=(FONTE, 12)).pack(anchor="w", pady=(4, 2))
             variavel = tk.StringVar()
             setattr(self, atributo, variavel)
+            variavel.trace_add("write", self.salvar_revisao_captura)
             self.campo(direita, variavel, titulo).pack(fill="x")
         ctk.CTkLabel(direita, text="Texto reconhecido", text_color=c("cinza"),
                      font=(FONTE, 12)).pack(anchor="w", pady=(8, 2))
@@ -1398,8 +1461,7 @@ class App(ctk.CTk):
                    largura=250).pack(anchor="e", pady=(0, 4))
 
     def atualizar_fila_captura(self):
-        pendente = 1 if self.captura_pendente is not None or self.captura_processando else 0
-        self.fila_captura.set(f"Fila: {pendente + len(self.capturas_fila)} foto(s)")
+        self.fila_captura.set(f"Fila: {self.fila_ocr.quantidade()} foto(s)")
 
     def mudar_tema(self, modo):
         self.modo = modo

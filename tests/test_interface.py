@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 import http.client
+import sqlite3
 import traceback
 from types import SimpleNamespace
 from ocr_runtime import ExecutorOCR
@@ -42,7 +43,11 @@ class InterfaceTests(unittest.TestCase):
         self.assertFalse(self.erros)
 
     def fechar_app(self):
+        self.app.encerrando = True
         self.app.executor_ocr.fechar()
+        if self.app.thread_ocr is not None:
+            self.app.thread_ocr.join(timeout=3)
+        self.app.fila_ocr.fechar()
         for callback in self.app.tk.call("after", "info"):
             self.app.tk.call("after", "cancel", callback)
         self.app.destroy()
@@ -246,7 +251,7 @@ class InterfaceTests(unittest.TestCase):
         self.aguardar_ocr()
         self.assertGreater(len(pulsos), 5)
         self.assertLess(max(b - a for a, b in zip(pulsos, pulsos[1:])), 0.7)
-        self.assertEqual(self.app.capturas_fila, [])
+        self.assertEqual(self.app.fila_ocr.quantidade("aguardando"), 0)
 
     def test_tesseract_recebe_segunda_foto_sem_bloquear_a_janela(self):
         liberar = threading.Event()
@@ -260,7 +265,7 @@ class InterfaceTests(unittest.TestCase):
                 self.app.receber_captura(b"foto um", ".png")
                 self.app.receber_captura(b"foto dois", ".png")
                 self.assertTrue(self.app.captura_processando)
-                self.assertEqual(len(self.app.capturas_fila), 1)
+                self.assertEqual(self.app.fila_ocr.quantidade("aguardando"), 1)
                 eventos = []
                 self.app.after_idle(lambda: eventos.append("responsiva"))
                 self.app.update()
@@ -289,7 +294,9 @@ class InterfaceTests(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.assertEqual(erros, [])
         self.assertEqual(recebidos, [True])
-        self.assertEqual(self.app.entradas_captura.get_nowait(), (b"foto", ".png"))
+        self.assertEqual(self.app.fila_ocr.quantidade("aguardando"), 1)
+        foto = self.app.fila_ocr.proxima("Tesseract")
+        self.assertEqual(self.app.fila_ocr.caminho(foto).read_bytes(), b"foto")
 
     def test_upload_de_outra_foto_responde_enquanto_ocr_esta_ocupado(self):
         liberar = threading.Event()
@@ -329,12 +336,63 @@ class InterfaceTests(unittest.TestCase):
                 # Consome os envios sem deixar a primeira leitura terminar.
                 self.app.receber_fotos_enfileiradas()
                 self.assertTrue(self.app.captura_processando)
-                self.assertEqual(len(self.app.capturas_fila), 1)
+                self.assertEqual(self.app.fila_ocr.quantidade("aguardando"), 1)
             finally:
                 liberar.set()
                 self.aguardar_ocr()
                 self.app.parar_servidor_captura()
         self.assertEqual(leituras, [b"primeira", b"segunda"])
+
+    def test_reabre_revisao_preservando_campos_editados_e_proxima_foto(self):
+        with patch.object(main, "executar_ocr_motor", return_value=(
+                "Loja\n04/11/2026\nTotal a pagar 100,00D", "Leitura incerta")):
+            self.app.receber_captura(b"primeira", ".png")
+            self.aguardar_ocr()
+        self.app.captura_valor.set("555.55")
+        self.app.captura_descricao.set("Descricao revisada")
+        self.app.receber_captura(b"segunda", ".png")
+        identificador = self.app.captura_id
+        self.fechar_app()
+        self.app = main.App()
+        self.app.executor_ocr = SimpleNamespace(
+            ler=lambda *args: self.app.ler_imagem_captura(*args), fechar=lambda: None)
+        self.app.report_callback_exception = lambda *args: self.erros.append(args)
+        self.app.processar_proxima_captura()
+        self.assertEqual(self.app.captura_id, identificador)
+        self.assertEqual(self.app.captura_valor.get(), "555.55")
+        self.assertEqual(self.app.captura_descricao.get(), "Descricao revisada")
+        self.assertIn("incerta", self.app.captura_aviso.get())
+        self.assertEqual(self.app.fila_ocr.quantidade("aguardando"), 1)
+        self.assertEqual(main.carregar_linhas("a2.txt"), [])
+
+    def test_fechar_durante_leitura_preserva_foto_para_reprocessar(self):
+        liberar = threading.Event()
+        def leitura(*args):
+            liberar.wait(timeout=2)
+            return "", "processo encerrado"
+        self.app.executor_ocr = SimpleNamespace(ler=leitura, fechar=liberar.set)
+        self.app.receber_captura(b"foto interrompida", ".png")
+        self.fechar_app()
+        self.app = main.App()
+        self.app.executor_ocr = SimpleNamespace(
+            ler=lambda *args: self.app.ler_imagem_captura(*args), fechar=lambda: None)
+        self.app.report_callback_exception = lambda *args: self.erros.append(args)
+        self.assertEqual(self.app.fila_ocr.quantidade("aguardando"), 1)
+        imagens = list(self.app.fila_ocr.imagens.iterdir())
+        self.assertEqual(len(imagens), 1)
+        self.assertEqual(imagens[0].read_bytes(), b"foto interrompida")
+
+    def test_falha_ao_salvar_resultado_pausa_sem_apagar_imagem(self):
+        with patch.object(main, "executar_ocr_motor", return_value=("texto", "")), \
+                patch.object(self.app.fila_ocr, "resultado", side_effect=sqlite3.OperationalError("disco cheio")):
+            self.app.receber_captura(b"foto preservada", ".png")
+            self.aguardar_ocr()
+        self.assertTrue(self.app.fila_pausada)
+        self.assertEqual(self.app.fila_ocr.quantidade("processando"), 1)
+        imagens = list(self.app.fila_ocr.imagens.iterdir())
+        self.assertEqual(len(imagens), 1)
+        self.assertEqual(imagens[0].read_bytes(), b"foto preservada")
+        self.assertIn("preservada", self.app.captura_aviso.get())
 
     def test_fila_processa_tres_fotos_em_ordem_com_todos_os_motores(self):
         origem = [f"04/11/2026 Loja {n} {n}00,00D" for n in (1, 2, 3)]
@@ -366,7 +424,7 @@ class InterfaceTests(unittest.TestCase):
             self.aguardar_ocr()
         self.assertIsNotNone(self.app.captura_pendente)
         self.assertEqual(self.app.captura_valor.get(), "200.00")
-        self.assertEqual(self.app.capturas_fila, [])
+        self.assertEqual(self.app.fila_ocr.quantidade("aguardando"), 0)
 
     def test_descartar_nao_confirma_documento_e_libera_fila(self):
         self.app.apresentar_resultado_ocr("Loja\n04/11/2026\nTotal a pagar 100,00D", "")
@@ -399,7 +457,7 @@ class InterfaceTests(unittest.TestCase):
                 self.app.update()
                 self.assertEqual(eventos, ["janela responsiva"])
                 self.assertTrue(self.app.captura_processando)
-                self.assertEqual(len(self.app.capturas_fila), 1)
+                self.assertEqual(self.app.fila_ocr.quantidade("aguardando"), 1)
                 liberar.set()
                 limite = time.monotonic() + 3
                 while self.app.captura_processando and time.monotonic() < limite:
@@ -407,7 +465,7 @@ class InterfaceTests(unittest.TestCase):
                     time.sleep(0.01)
                 self.assertFalse(self.app.captura_processando)
                 self.assertIsNotNone(self.app.captura_pendente)
-                self.assertEqual(len(self.app.capturas_fila), 1)
+                self.assertEqual(self.app.fila_ocr.quantidade("aguardando"), 1)
                 self.assertEqual(main.carregar_linhas("a2.txt"), [])
             finally:
                 liberar.set()

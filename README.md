@@ -122,8 +122,19 @@ com um aviso e o processo é recriado para a próxima foto. Ao fechar a janela,
 o processo de OCR também é encerrado. Quando
 uma foto precisa de revisão, confirme-a ou use **Descartar foto e seguir fila**
 para liberar a próxima. Receber outra foto não apaga os avisos da revisão atual.
-Durante o OCR, a imagem usa um arquivo
-temporário, removido ao concluir a leitura; o aplicativo não arquiva as fotos. A validação automática inclui no `a2.txt`
+A fila é persistente e local: `No/capturas/fila.sqlite3` guarda os campos
+extraídos, as edições da revisão, a ordem e o estado; `No/capturas/imagens/`
+guarda as fotos temporárias separadas do banco. O telefone só recebe a
+confirmação depois da gravação do lote inteiro. As imagens pendentes não ficam
+acumuladas na memória. Ao reabrir o programa, leituras interrompidas voltam
+à fila e revisões são recuperadas com seus campos editados. Uma revisão
+aguarda confirmação ou descarte antes da próxima foto. Ao concluir ou
+descartar, a imagem é removida e os campos permanecem no histórico do banco.
+Se faltar espaço ou falhar a gravação do resultado, a fila pausa e preserva
+a imagem; corrija o armazenamento e reabra o programa. Uma única instância
+por pasta pode processar essa fila. Feche o programa antes de copiar a pasta `No/` para fazer backup da fila.
+O OCR continua trabalhando uma imagem por vez, com no máximo duas threads de
+cálculo, respeitando o limite de CPU configurado para o PaddleOCR. A validação automática inclui no `a2.txt`
 somente a linha correspondente do `a1.txt`; a conferência continua sendo feita
 exclusivamente entre esses dois arquivos.
 
