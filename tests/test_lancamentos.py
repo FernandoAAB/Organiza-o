@@ -344,3 +344,64 @@ class UploadInterrompidoTests(unittest.TestCase):
                 else:
                     handler.send_error.assert_not_called()
                     handler.server.captura_callback.assert_called_once_with(conteudo, '.png')
+
+
+class PainelFolhasHTTPTests(unittest.TestCase):
+    def setUp(self):
+        from fila_ocr import FilaOCR
+        pasta = tempfile.TemporaryDirectory()
+        self.addCleanup(pasta.cleanup)
+        self.fila = FilaOCR(pasta.name)
+        self.addCleanup(self.fila.fechar)
+        self.servidor = main._CaptureHTTPServer(('127.0.0.1', 0), main._UploadHandler)
+        self.servidor.fila_ocr = self.fila
+        self.servidor.captura_lote_callback = self.fila.adicionar_lote
+        self.thread = threading.Thread(target=self.servidor.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self.servidor.server_close)
+        self.addCleanup(self.servidor.shutdown)
+
+    def requisitar(self, metodo, caminho, corpo=None, headers=None):
+        cliente = http.client.HTTPConnection(*self.servidor.server_address, timeout=5)
+        try:
+            cliente.request(metodo, caminho, body=corpo, headers=headers or {})
+            resposta = cliente.getresponse()
+            return resposta.status, dict(resposta.getheaders()), resposta.read()
+        finally:
+            cliente.close()
+
+    def test_identifica_folha_recebida_previa_e_finalizacao(self):
+        import io, json
+        from PIL import Image
+        dados = io.BytesIO()
+        Image.new('RGB', (50, 100), 'white').save(dados, format='PNG')
+        corpo = (b'--teste\r\nContent-Disposition: form-data; name="documento"; filename="foto.png"\r\n\r\n'
+                 + dados.getvalue() + b'\r\n--teste--\r\n')
+        status, _, resposta = self.requisitar('POST', '/', corpo, {
+            'Content-Type': 'multipart/form-data; boundary=teste', 'Accept': 'application/json'})
+        self.assertEqual(status, 200)
+        identificador = json.loads(resposta)['folhas'][0]
+        status, headers, painel = self.requisitar('GET', '/fila')
+        self.assertEqual(status, 200)
+        self.assertEqual(headers['Cache-Control'], 'no-store')
+        folha = json.loads(painel)['folhas'][0]
+        self.assertEqual(folha['id'], identificador)
+        self.assertNotIn('imagem', folha)  # A API não expõe caminhos do computador.
+        status, headers, previa = self.requisitar('GET', folha['previa'])
+        self.assertEqual(status, 200)
+        self.assertEqual(headers['Content-Type'], 'image/jpeg')
+        self.assertEqual(headers['Cache-Control'], 'no-store')
+        self.assertTrue(previa.startswith(b'\xff\xd8'))
+        self.fila.finalizar(identificador, 'concluida')
+        self.assertEqual(self.requisitar('GET', folha['previa'])[0], 410)
+        painel = json.loads(self.requisitar('GET', '/fila')[2])
+        self.assertEqual(painel['recentes'][0]['id'], identificador)
+        self.assertIsNone(painel['recentes'][0]['previa'])
+
+    def test_nao_serve_caminhos_arbitrarios_e_valida_pagina(self):
+        for caminho, esperado in (('/fila/../fila.sqlite3', 404),
+                                  ('/fila/0/previa', 404),
+                                  ('/fila/999999/previa', 410),
+                                  ('/fila?pagina=abc', 400)):
+            with self.subTest(caminho=caminho):
+                self.assertEqual(self.requisitar('GET', caminho)[0], esperado)

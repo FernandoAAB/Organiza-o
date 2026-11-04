@@ -127,3 +127,57 @@ class FilaOCRTests(unittest.TestCase):
                     envio.join(timeout=5)
         self.assertTrue(livre, 'A exclusao da imagem segurou a escrita no banco.')
         self.assertEqual(self.fila.quantidade(), 1)
+
+    def foto_png(self):
+        import io
+        from PIL import Image
+        dados = io.BytesIO()
+        Image.new('RGB', (1200, 1600), 'white').save(dados, format='PNG')
+        return dados.getvalue()
+
+    def test_previa_temporaria_some_mas_numero_e_estado_permanecem(self):
+        import io
+        from PIL import Image
+        identificador = self.fila.adicionar(self.foto_png(), '.png')
+        painel = self.fila.painel()
+        self.assertEqual(painel['folhas'][0]['id'], identificador)
+        self.assertEqual(painel['folhas'][0]['estado'], 'aguardando')
+        with Image.open(io.BytesIO(self.fila.previa(identificador))) as previa:
+            self.assertEqual(previa.format, 'JPEG')
+            self.assertLessEqual(previa.width, 480)
+            self.assertLessEqual(previa.height, 640)
+        self.fila.proxima('PaddleOCR')
+        self.assertEqual(self.fila.painel()['folhas'][0]['estado'], 'processando')
+        self.fila.resultado(identificador, 'recibo', 'revisar', {'valor': '10.00'})
+        self.assertEqual(self.fila.painel()['folhas'][0]['estado'], 'revisao')
+        self.fila.finalizar(identificador, 'concluida')
+        self.assertIsNone(self.fila.previa(identificador))
+        painel = self.fila.painel()
+        self.assertEqual(painel['folhas'], [])
+        self.assertEqual(painel['recentes'][0], dict(id=identificador, estado='concluida', previa=None))
+        self.assertEqual(painel['totais']['concluida'], 1)
+
+    def test_painel_paginado_preserva_ordem_e_ids(self):
+        ids = self.fila.adicionar_lote([(b'foto', '.png')] * 27)
+        self.assertEqual([f['id'] for f in self.fila.painel()['folhas']], ids[:24])
+        self.assertEqual([f['id'] for f in self.fila.painel(1)['folhas']], ids[24:])
+        self.assertEqual(self.fila.painel(999)['pagina'], 1)
+        self.assertEqual(self.fila.painel()['pendentes'], 27)
+        self.fila.finalizar(ids[0], 'descartada')
+        self.fila.recuperar()
+        self.assertEqual(self.fila.painel()['folhas'][0]['id'], ids[1])
+        self.assertEqual(self.fila.painel()['recentes'][0]['id'], ids[0])
+
+    def test_cache_de_previas_e_limitado_e_nao_altera_imagem_original(self):
+        conteudo = self.foto_png()
+        ids = self.fila.adicionar_lote([(conteudo, '.png')] * 18)
+        for identificador in ids:
+            self.assertIsNotNone(self.fila.previa(identificador))
+        self.assertLessEqual(len(self.fila._previas), 16)
+        foto = self.fila.proxima('PaddleOCR')
+        self.assertEqual(self.fila.caminho(foto).read_bytes(), conteudo)
+
+    def test_previa_invalida_nao_apaga_foto_pendente(self):
+        identificador = self.fila.adicionar(b'foto invalida', '.png')
+        self.assertIsNone(self.fila.previa(identificador))
+        self.assertEqual(self.fila.quantidade(), 1)

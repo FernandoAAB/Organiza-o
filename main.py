@@ -6,6 +6,7 @@ import sqlite3
 import io
 import subprocess
 import multiprocessing
+from urllib.parse import urlsplit, parse_qs
 import queue
 import os
 import re
@@ -523,7 +524,8 @@ class _UploadHandler(BaseHTTPRequestHandler):
             atualizarEnvios();
             enviarProximo();
           };
-          xhr.open('POST', window.location.pathname || '/');
+          xhr.open('POST', '/');
+          xhr.setRequestHeader('Accept', 'application/json');
           xhr.timeout = 300000;
           xhr.upload.onprogress = (evento) => {
             if (!evento.lengthComputable) return;
@@ -534,7 +536,10 @@ class _UploadHandler(BaseHTTPRequestHandler):
           };
           xhr.onload = () => {
             if (xhr.status === 200) {
-              terminar(true, 'recebida e salva na fila do computador.');
+              let folha = '';
+              try { folha = JSON.parse(xhr.responseText).folhas[0] || ''; } catch (erro) {}
+              terminar(true, (folha ? 'Folha ' + folha + ': ' : '') + 'recebida e salva na fila do computador.');
+              consultarPainel();
             } else if (xhr.status === 503) {
               terminar(false, 'o computador não conseguiu salvar. Confira o armazenamento e envie novamente.');
             } else {
@@ -551,6 +556,82 @@ class _UploadHandler(BaseHTTPRequestHandler):
           tarefa.linha.textContent = tarefa.arquivo.name + ': enviando...';
           try { xhr.send(dados); } catch (erro) { semConfirmacao(); }
         }
+        let paginaFolhas = 0;
+        let consultandoPainel = false;
+        const mapasFolhas = {pendentes: new Map(), recentes: new Map()};
+        const nomesEstados = {aguardando:'Aguardando leitura', processando:'Processando agora',
+          revisao:'Aguardando revisão no computador', concluida:'Concluída', descartada:'Descartada'};
+        function mostrarFolhas(itens, destino, mapa) {
+          const presentes = new Set(itens.map(item => item.id));
+          for (const [id, cartao] of mapa) {
+            if (!presentes.has(id)) { cartao.elemento.remove(); mapa.delete(id); }
+          }
+          itens.forEach((folha, indice) => {
+            let cartao = mapa.get(folha.id);
+            if (!cartao) {
+              const elemento = document.createElement('article');
+              const miniatura = document.createElement('div'); miniatura.className = 'miniatura';
+              const texto = document.createElement('div'); texto.className = 'texto-folha';
+              const numero = document.createElement('h3');
+              numero.textContent = 'Folha ' + String(folha.id).padStart(4, '0');
+              const estado = document.createElement('p');
+              texto.appendChild(numero); texto.appendChild(estado);
+              elemento.appendChild(miniatura); elemento.appendChild(texto);
+              cartao = {elemento, miniatura, estado, url:undefined};
+              mapa.set(folha.id, cartao);
+            }
+            cartao.elemento.className = 'folha ' + folha.estado;
+            cartao.estado.textContent = nomesEstados[folha.estado] || folha.estado;
+            if (cartao.url !== folha.previa) {
+              cartao.url = folha.previa;
+              cartao.miniatura.textContent = '';
+              if (folha.previa) {
+                const link = document.createElement('a');
+                link.href = folha.previa; link.target = '_blank'; link.rel = 'noopener';
+                link.title = 'Ampliar prévia temporária da folha ' + folha.id;
+                const imagem = document.createElement('img');
+                imagem.alt = 'Prévia da folha ' + folha.id; imagem.loading = 'lazy';
+                imagem.width = 100; imagem.height = 130;
+                imagem.onerror = () => { cartao.miniatura.textContent = 'Prévia indisponível'; };
+                imagem.src = folha.previa;
+                link.appendChild(imagem); cartao.miniatura.appendChild(link);
+              } else {
+                cartao.miniatura.textContent = 'Nº ' + folha.id;
+              }
+            }
+            if (destino.children[indice] !== cartao.elemento) {
+              destino.insertBefore(cartao.elemento, destino.children[indice] || null);
+            }
+          });
+        }
+        async function consultarPainel() {
+          if (consultandoPainel) return;
+          consultandoPainel = true;
+          try {
+            const resposta = await fetch('/fila?pagina=' + paginaFolhas, {cache:'no-store'});
+            if (!resposta.ok) throw new Error('Fila indisponível');
+            const dados = await resposta.json();
+            paginaFolhas = dados.pagina;
+            const totais = dados.totais;
+            document.getElementById('resumo-folhas').textContent = dados.pendentes + ' pendente(s) · ' +
+              (totais.concluida || 0) + ' concluída(s) · ' + (totais.descartada || 0) + ' descartada(s)';
+            document.getElementById('estado-conexao').textContent = 'Atualizado automaticamente';
+            document.getElementById('pagina-folhas').textContent = 'Página ' + (dados.pagina + 1) + ' de ' + dados.paginas;
+            document.getElementById('folhas-anteriores').disabled = dados.pagina === 0;
+            document.getElementById('folhas-proximas').disabled = dados.pagina + 1 >= dados.paginas;
+            mostrarFolhas(dados.folhas, document.getElementById('folhas-pendentes'), mapasFolhas.pendentes);
+            mostrarFolhas(dados.recentes, document.getElementById('folhas-recentes'), mapasFolhas.recentes);
+            document.getElementById('fila-vazia').hidden = dados.pendentes > 0;
+          } catch (erro) {
+            document.getElementById('estado-conexao').textContent = 'Sem atualização. Confira a conexão com o computador.';
+          } finally {
+            consultandoPainel = false;
+          }
+        }
+        function mudarPaginaFolhas(delta) { paginaFolhas = Math.max(0, paginaFolhas + delta); consultarPainel(); }
+        consultarPainel();
+        setInterval(() => { if (!document.hidden) consultarPainel(); }, 2000);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) consultarPainel(); });
         """
         return f"""<!doctype html>
 <html lang="pt-BR"><meta charset="utf-8">
@@ -582,6 +663,19 @@ button:active {{ transform: translateY(1px); }}
 .aviso {{ background: #e5f7ef; border: 1px solid #9de3c5; color: #075e46;
   padding: 11px 12px; border-radius: 10px; }}
 .ajuda {{ color: #586b81; font-size: .95rem; line-height: 1.45; }}
+.folha {{ display:flex; align-items:center; gap:14px; padding:12px; margin:10px 0;
+  border:1px solid #dce6ef; border-radius:12px; background:#f5f9fc; }}
+.folha.processando {{ border-color:#059669; border-width:2px; }}
+.folha.revisao {{ border-color:#d89a22; }}
+.miniatura {{ width:100px; min-width:100px; height:130px; display:flex; align-items:center;
+  justify-content:center; background:#e5edf5; border-radius:6px; overflow:hidden;
+  font-size:1.2rem; font-weight:700; color:#344e69; text-align:center; }}
+.miniatura img {{ display:block; width:100px; height:130px; object-fit:contain; }}
+.texto-folha h3 {{ margin:0 0 8px; font-size:1.05rem; }}
+.texto-folha p {{ margin:0; font-size:.92rem; }}
+.paginacao {{ display:flex; align-items:center; justify-content:space-between; gap:10px; }}
+.paginacao button {{ width:auto; margin:0; padding:8px 12px; }}
+button:disabled {{ opacity:.45; cursor:default; }}
 @media (prefers-color-scheme: dark) {{
   body {{ background: #06121e; color: #f0f6fc; }}
   main {{ background: #0b1c2b; border-color: #183143; }}
@@ -589,6 +683,10 @@ button:active {{ transform: translateY(1px); }}
   .subtitulo, .ajuda {{ color: #acbfd1; }}
   input[type="file"] {{ background: #152c3d; border-color: #416076; color: #f0f6fc; }}
   .aviso {{ background: #123b32; border-color: #167653; color: #b7f5d9; }}
+  .folha {{ background:#102638; border-color:#294257; }}
+  .folha.processando {{ border-color:#10b981; }}
+  .folha.revisao {{ border-color:#d89a22; }}
+  .miniatura {{ background:#1b354a; color:#e0edf7; }}
 }}
 </style><body><main>
 <header><div class="marca" aria-hidden="true">+</div><div>
@@ -608,16 +706,62 @@ Mantenha esta página aberta até a confirmação.</p>
 <p id="situacao-envio" role="status" aria-live="polite">Pronto para receber fotos.</p>
 <progress id="progresso-envio" max="100" value="0" aria-label="Progresso do envio" style="width:100%"></progress>
 <ul id="lista-envios" style="overflow-wrap:anywhere"></ul>
+<section aria-labelledby="titulo-fila">
+<h2 id="titulo-fila">Suas folhas</h2>
+<p id="resumo-folhas" role="status">Consultando a fila do computador...</p>
+<p id="estado-conexao" class="subtitulo"></p>
+<h3>Na fila</h3><p id="fila-vazia" hidden>Nenhuma folha pendente.</p>
+<div id="folhas-pendentes"></div>
+<nav class="paginacao" aria-label="Páginas da fila">
+<button type="button" id="folhas-anteriores" onclick="mudarPaginaFolhas(-1)" disabled>Anterior</button>
+<span id="pagina-folhas"></span>
+<button type="button" id="folhas-proximas" onclick="mudarPaginaFolhas(1)" disabled>Próxima</button>
+</nav>
+<h3>Últimas folhas finalizadas</h3><div id="folhas-recentes"></div>
+<p class="ajuda">A prévia é temporária: ao concluir ou descartar, a imagem sai e o número da folha permanece. Toque na miniatura para ampliar.</p>
+</section>
 <script>{script}</script>
 </main></body></html>"""
 
-    def do_GET(self):
-        dados = self.pagina_upload().encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+    def responder(self, dados, tipo, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(dados)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(dados)
+
+    def do_GET(self):
+        endereco = urlsplit(self.path)
+        if endereco.path == "/":
+            self.responder(self.pagina_upload().encode("utf-8"), "text/html; charset=utf-8")
+            return
+        fila = getattr(self.server, 'fila_ocr', None)
+        if fila is None:
+            self.send_error(404)
+            return
+        try:
+            if endereco.path == '/fila':
+                try:
+                    pagina = int(parse_qs(endereco.query).get('pagina', ['0'])[0])
+                except ValueError:
+                    self.send_error(400)
+                    return
+                dados = json.dumps(fila.painel(pagina), ensure_ascii=False).encode('utf-8')
+                self.responder(dados, 'application/json; charset=utf-8')
+                return
+            foto = re.fullmatch(r'/fila/([1-9][0-9]{0,17})/previa', endereco.path)
+            if foto:
+                dados = fila.previa(int(foto.group(1)))
+                if dados is None:
+                    self.send_error(410, "Previa indisponivel ou folha finalizada")
+                else:
+                    self.responder(dados, 'image/jpeg')
+                return
+        except (OSError, sqlite3.Error):
+            self.send_error(503, "Fila temporariamente indisponivel")
+            return
+        self.send_error(404)
 
     def do_POST(self):
         try:
@@ -666,21 +810,23 @@ Mantenha esta página aberta até a confirmação.</p>
         try:
             lote = getattr(self.server, "captura_lote_callback", None)
             if lote is not None:
-                lote(arquivos)
+                identificadores = lote(arquivos)
             else:
-                for conteudo, extensao in arquivos:
-                    self.server.captura_callback(conteudo, extensao)
+                identificadores = [self.server.captura_callback(conteudo, extensao)
+                                   for conteudo, extensao in arquivos]
+            if not isinstance(identificadores, (list, tuple)):
+                identificadores = []
+            identificadores = [item for item in identificadores if isinstance(item, int)]
         except Exception:
             self.send_error(503, "Nao foi possivel salvar na fila local. Tente novamente.")
             return
-        dados = self.pagina_upload(
-            f"{len(arquivos)} foto(s) recebida(s). Você pode selecionar e enviar mais."
-        ).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(dados)))
-        self.end_headers()
-        self.wfile.write(dados)
+        if 'application/json' in self.headers.get('Accept', ''):
+            dados = json.dumps(dict(folhas=identificadores, recebidas=len(arquivos))).encode('utf-8')
+            self.responder(dados, 'application/json; charset=utf-8')
+        else:
+            dados = self.pagina_upload(
+                f"{len(arquivos)} foto(s) recebida(s). Você pode selecionar e enviar mais.").encode("utf-8")
+            self.responder(dados, "text/html; charset=utf-8")
 
     def log_message(self, *_):
         return
@@ -1243,6 +1389,7 @@ class App(ctk.CTk):
             return
         servidor.captura_callback = self.fila_ocr.adicionar
         servidor.captura_lote_callback = self.fila_ocr.adicionar_lote
+        servidor.fila_ocr = self.fila_ocr
         self.servidor_captura = servidor
         self.thread_servidor_captura = threading.Thread(
             target=servidor.serve_forever, daemon=True)

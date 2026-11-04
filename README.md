@@ -123,7 +123,16 @@ as envia uma por vez, mostra o progresso e permite selecionar outras enquanto
 um envio está em andamento, sem recarregar a página nem cancelar o anterior.
 Mantenha a página aberta até cada foto aparecer como recebida no computador.
 Se houver falha sem confirmação, confira a fila no computador antes de reenviar.
-O computador mantém uma fila de revisão. Todos os motores leem em um processo separado da interface, uma foto por vez;
+O computador mantém uma fila de revisão. Na página do telefone, **Suas folhas**
+mostra a miniatura de cada foto pendente, seu número fixo (**Folha 0001**,
+**Folha 0002**…) e o estado: aguardando leitura, processando ou em revisão.
+O painel se atualiza automaticamente; toque na miniatura para ampliar.
+Ao concluir ou descartar, a prévia sai e o número permanece nas folhas
+finalizadas. Os números e as contagens vêm do banco local e continuam ao
+recarregar a página ou reiniciar o programa; identificam as fotos, separadamente
+das referências de linha do A1. São exibidas 24 pendentes por página e as
+últimas 20 finalizadas, com contagens totais. As prévias são reduzidas, carregadas
+sob demanda e não ficam arquivadas como novos arquivos no disco. Todos os motores leem em um processo separado da interface, uma foto por vez;
 novos envios entram na fila. O processo é reutilizado para manter os modelos
 carregados, usa até duas threads nas bibliotecas numéricas e tem limite de
 180 segundos por leitura. Se encerrar ou exceder o prazo, a leitura falha

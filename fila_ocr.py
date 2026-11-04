@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 import sqlite3
 import uuid
+import io
+import threading
+from collections import OrderedDict
 
 
 class FilaOCR:
@@ -14,6 +17,8 @@ class FilaOCR:
         self.imagens.mkdir(parents=True, exist_ok=True)
         self.banco = self.pasta / "fila.sqlite3"
         self._lock = None
+        self._previas = OrderedDict()
+        self._lock_previas = threading.Lock()
         if exclusivo:
             arquivo = open(self.pasta / "processamento.lock", "a+b")
             try:
@@ -145,6 +150,61 @@ class FilaOCR:
             if estado:
                 return db.execute("SELECT COUNT(*) FROM fotos WHERE estado=?", (estado,)).fetchone()[0]
             return db.execute("SELECT COUNT(*) FROM fotos WHERE estado IN ('aguardando','processando','revisao')").fetchone()[0]
+
+    def painel(self, pagina=0):
+        pagina = max(0, int(pagina))
+        limite = 24
+        with self._conectar(timeout=0.1) as db:
+            totais = {row['estado']: row['n'] for row in db.execute(
+                'SELECT estado, COUNT(*) AS n FROM fotos GROUP BY estado')}
+            pendentes = sum(totais.get(estado, 0) for estado in ('aguardando', 'processando', 'revisao'))
+            pagina = min(pagina, max(0, (pendentes - 1) // limite))
+            ativas = db.execute(
+                "SELECT id, estado FROM fotos WHERE estado IN ('aguardando','processando','revisao') ORDER BY id LIMIT ? OFFSET ?",
+                (limite, pagina * limite)).fetchall()
+            recentes = db.execute(
+                "SELECT id, estado FROM fotos WHERE estado IN ('concluida','descartada') ORDER BY id DESC LIMIT 20").fetchall()
+        def item(row):
+            return dict(id=row['id'], estado=row['estado'], previa=(
+                f"/fila/{row['id']}/previa" if row['estado'] in ('aguardando', 'processando', 'revisao') else None))
+        return dict(pagina=pagina, paginas=max(1, (pendentes + limite - 1) // limite),
+                    totais=totais, pendentes=pendentes,
+                    folhas=[item(row) for row in ativas], recentes=[item(row) for row in recentes])
+
+    def previa(self, identificador):
+        from PIL import Image, ImageOps
+        # Cache limitado de JPEGs pequenos; as fotos originais continuam no disco.
+        with self._lock_previas:
+            with self._conectar(timeout=0.1) as db:
+                foto = db.execute("SELECT imagem FROM fotos WHERE id=? AND estado IN ('aguardando','processando','revisao')",
+                                  (identificador,)).fetchone()
+            if foto is None or not foto['imagem']:
+                self._previas.pop(identificador, None)
+                return None
+            if identificador in self._previas:
+                self._previas.move_to_end(identificador)
+                return self._previas[identificador]
+            try:
+                with Image.open(self.imagens / foto['imagem']) as original:
+                    original.thumbnail((480, 640), reducing_gap=3.0)
+                    imagem = ImageOps.exif_transpose(original).convert('RGBA')
+                    imagem.thumbnail((480, 640))
+                    fundo = Image.new('RGB', imagem.size, 'white')
+                    fundo.paste(imagem, mask=imagem.getchannel('A'))
+                    dados = io.BytesIO()
+                    fundo.save(dados, format='JPEG', quality=75)
+                # A leitura pode ter acabado enquanto a miniatura era gerada.
+                with self._conectar(timeout=0.1) as db:
+                    ativa = db.execute("SELECT 1 FROM fotos WHERE id=? AND estado IN ('aguardando','processando','revisao')",
+                                       (identificador,)).fetchone()
+                if not ativa:
+                    return None
+            except (OSError, ValueError, Image.DecompressionBombError):
+                return None
+            self._previas[identificador] = dados.getvalue()
+            while len(self._previas) > 16:
+                self._previas.popitem(last=False)
+            return self._previas[identificador]
 
     def fechar(self):
         if self._lock is not None:
