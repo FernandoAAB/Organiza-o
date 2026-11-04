@@ -217,7 +217,7 @@ class InterfaceTests(unittest.TestCase):
         self.app.motor_ocr.set("Comparar")
         def leitura(caminho, descricao):
             numero = Path(caminho).read_bytes().decode()
-            return f"{descricao}\n04/11/2026\nTotal a pagar {numero}00,00", ""
+            return f"{descricao}\n04/11/2026\nTotal a pagar {numero}00,00", "Leitura incerta: confira data, valor e tipo"
         with patch.object(main, "executar_ocr", side_effect=lambda caminho: leitura(caminho, "Loja no Tesseract")), \
                 patch.object(main.ocr_paddle, "executar_paddleocr", side_effect=lambda caminho: leitura(caminho, "Nome diferente no Paddle")):
             for n in (1, 2):

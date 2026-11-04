@@ -189,10 +189,11 @@ orientação de instalação; o Tesseract continua disponível.
 
 **Comparar** lê a mesma imagem com os dois mecanismos, mostra o texto do
 PaddleOCR e verifica concordância ou divergência em data, valor e tipo. Quando
-os três campos concordam e nenhum motor informa leitura incerta, segue o
-mesmo fluxo automático do PaddleOCR: procura uma única correspondência no A1,
+os três campos concordam, inclusive com avisos genéricos de leitura incerta,
+procura uma única correspondência no A1,
 salva a linha original no A2 e avança a fila. A descrição é apenas informativa.
-Divergência, campos ausentes, incerteza ou duplicidade no A1 exigem revisão.
+A concordância dos dois motores supera o aviso genérico de confiança.
+Divergência, campos ausentes, falha de um motor ou duplicidade no A1 exigem revisão.
 Se o PaddleOCR falhar, a leitura do Tesseract fica disponível para revisão. Nenhum mecanismo garante acerto de
 caracteres ou valores somente pela confiança informada.
 
