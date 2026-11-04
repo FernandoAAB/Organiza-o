@@ -992,11 +992,13 @@ class App(ctk.CTk):
 
     #  cabeçalho com seletor de tema 
     def _montar_cabecalho(self):
-        cab = ctk.CTkFrame(self, fg_color="transparent", height=46)
+        cab = self.cabecalho = ctk.CTkFrame(self, fg_color="transparent", height=46)
         cab.pack(fill="x", padx=10, pady=(2, 2))
         cab.grid_columnconfigure(2, weight=1)
-        ctk.CTkLabel(cab, text="Busca e Ordenação", text_color=c("texto"),
-                     font=(FONTE, 22, "bold"), height=42).grid(row=0, column=0, padx=(0, 14))
+        self.titulo_cabecalho = ctk.CTkLabel(
+            cab, text="Busca e Ordenação", text_color=c("texto"),
+            font=(FONTE, 22, "bold"), height=42)
+        self.titulo_cabecalho.grid(row=0, column=0, padx=(0, 14))
         self.aba_selecionada = tk.StringVar(value="Buscar e comparar")
         self.navegacao = ctk.CTkSegmentedButton(
             cab, values=["Buscar e comparar", "Lista A2", "Captura"], variable=self.aba_selecionada,
@@ -1004,8 +1006,9 @@ class App(ctk.CTk):
             fg_color=c("campo"), unselected_color=c("campo"),
             unselected_hover_color=c("campo_hover"), text_color=("#111827", "#ffffff"))
         self.navegacao.grid(row=0, column=1)
-        self.botao(cab, "Aparência", self.alternar_aparencia,
-                   largura=104, altura=30).grid(row=0, column=4, padx=(8, 0))
+        self.botao_aparencia = self.botao(
+            cab, "Aparência", self.alternar_aparencia, largura=104, altura=30)
+        self.botao_aparencia.grid(row=0, column=4, padx=(8, 0))
         self.painel_aparencia = ctk.CTkFrame(cab, fg_color="transparent")
 
         self.opt_acento = ctk.CTkOptionMenu(
@@ -1030,6 +1033,24 @@ class App(ctk.CTk):
         ctk.CTkLabel(self.painel_aparencia, text="Tema:", text_color=c("cinza"),
                      font=(FONTE, 13)).pack(side="right", padx=(8, 4))
         self.painel_aparencia.grid(row=0, column=3)
+        cab.bind("<Configure>", self._ajustar_cabecalho)
+
+    def _ajustar_cabecalho(self, evento=None):
+        if not self.painel_aparencia.winfo_manager():
+            return
+        # As fontes variam entre sistemas. Use a largura real solicitada pelos
+        # controles para decidir se os seletores precisam de uma segunda linha.
+        largura = sum(widget.winfo_reqwidth() for widget in (
+            self.titulo_cabecalho, self.navegacao,
+            self.painel_aparencia, self.botao_aparencia))
+        largura += round(self.cabecalho._apply_widget_scaling(22))  # margens da grade
+        compacta = self.cabecalho.winfo_width() < largura
+        linha = 1 if compacta else 0
+        if int(self.painel_aparencia.grid_info()["row"]) != linha:
+            self.painel_aparencia.grid(
+                row=linha, column=0 if compacta else 3,
+                columnspan=5 if compacta else 1,
+                sticky="e" if compacta else "", pady=(0, 4) if compacta else 0)
 
     def trocar_aba(self, nome):
         visual = nome
@@ -1043,7 +1064,8 @@ class App(ctk.CTk):
         if self.painel_aparencia.winfo_manager():
             self.painel_aparencia.grid_remove()
         else:
-            self.painel_aparencia.grid(row=0, column=3)
+            self.painel_aparencia.grid()
+            self._ajustar_cabecalho()
 
     def iniciar_servidor_captura(self):
         if (self.servidor_captura is not None

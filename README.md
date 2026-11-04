@@ -32,7 +32,9 @@ As tabelas crescem com a janela até os botões inferiores; o rodapé global tem
 24 pixels e reúne contadores, quantidade selecionada e estado da atualização. As medidas acompanham a
 escala do sistema e são iguais nos temas claro e escuro.
 Os seletores de tema e cor ficam visíveis no cabeçalho e podem ser recolhidos
-pelo botão **Aparência**. Os controles usam ícones desenhados no aplicativo,
+pelo botão **Aparência**. Quando a largura da janela ou a fonte do sistema
+não permite acomodar tudo, os seletores ocupam uma segunda linha; ao ampliar
+a janela, voltam para a primeira. Os controles usam ícones desenhados no aplicativo,
 sem depender de símbolos especiais nas fontes do computador.
 **Esmeralda** é o destaque inicial; as preferências já salvas continuam válidas.
 A situação aparece antes do registro, ficando visível mesmo em linhas longas.

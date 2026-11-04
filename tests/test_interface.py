@@ -330,6 +330,37 @@ class InterfaceTests(unittest.TestCase):
         self.app.update()
         conferir(horizontal=False, vertical=False)
 
+    def test_cabecalho_acomoda_fontes_largas_ao_redimensionar_e_reabrir_aparencia(self):
+        # Reproduz a diferença de métricas das fontes dos runners Linux.
+        self.app.navegacao.configure(font=(main.FONTE, 20, "bold"))
+        for largura in (960, 1366, 960):
+            with self.subTest(largura=largura):
+                self.app.geometry(f"{largura}x768")
+                self.app.update()
+                for widget in (self.app.navegacao, self.app.botao_aparencia,
+                               self.app.painel_aparencia):
+                    self.assertTrue(widget.winfo_ismapped())
+                    self.assertGreaterEqual(widget.winfo_x(), 0)
+                    self.assertLessEqual(widget.winfo_x() + widget.winfo_width(),
+                                         widget.master.winfo_width())
+                    self.assertLessEqual(widget.winfo_y() + widget.winfo_height(),
+                                         widget.master.winfo_height())
+                self.app.alternar_aparencia()
+                self.app.geometry("1200x768")
+                self.app.update()
+                self.assertFalse(self.app.painel_aparencia.winfo_ismapped())
+                self.app.geometry(f"{largura}x768")
+                self.app.update()
+                self.app.alternar_aparencia()
+                self.app.update()
+                painel = self.app.painel_aparencia
+                self.assertTrue(painel.winfo_ismapped())
+                self.assertLessEqual(painel.winfo_x() + painel.winfo_width(),
+                                     painel.master.winfo_width())
+                self.assertLessEqual(self.app.botao_aparencia.winfo_x() +
+                                     self.app.botao_aparencia.winfo_width(),
+                                     self.app.cabecalho.winfo_width())
+
     def test_redimensionamento_mantem_tabelas_alinhadas_e_controles_visiveis(self):
         def conferir(widget):
             for filho in widget.winfo_children():
