@@ -137,7 +137,13 @@ O Tesseract continua sendo a opção inicial. Em **Capturar documento**, o selet
 usa modelos leves PP-OCRv5 para detecção e reconhecimento de caracteres latinos,
 com orientação de documento e de linhas, executados na CPU.
 
-Para instalar a opção, use Python 3.11 a 3.13, em um sistema compatível com as
+No Windows, basta abrir **`iniciar.bat`**: ele sincroniza as dependências com
+a opção PaddleOCR, prepara os modelos e abre o aplicativo. A primeira vez
+pode demorar e precisa de internet; as próximas reutilizam os pacotes e modelos
+já baixados. Se o preparo do PaddleOCR falhar, o inicializador avisa e tenta
+abrir com Tesseract ou preenchimento manual. O `uv` precisa estar instalado.
+
+Para preparar manualmente em outros sistemas, use Python 3.11 a 3.13, em um sistema compatível com as
 wheels do PaddlePaddle (Windows/Linux x64 ou macOS ARM64):
 
 ```sh
@@ -153,8 +159,8 @@ usa os arquivos locais. O PaddleOCR carrega somente quando selecionado e
 processa a fila em segundo plano, mantendo a janela responsiva.
 
 Mantenha `--extra paddle` ao executar os comandos `uv sync`/`uv run` para
-preservar a instalação opcional. No Windows, `iniciar.bat` também preserva os
-pacotes opcionais já instalados. Sem a opção instalada, o seletor mostra a
+preservar a instalação opcional. No Windows, `iniciar.bat` faz esse preparo
+automaticamente, com Python 3.11 a 3.13. Sem a opção instalada, o seletor mostra a
 orientação de instalação; o Tesseract continua disponível.
 
 **Comparar** lê a mesma imagem com os dois mecanismos, mostra o texto do
