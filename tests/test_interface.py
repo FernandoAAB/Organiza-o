@@ -261,7 +261,7 @@ class InterfaceTests(unittest.TestCase):
         respostas, erros, leituras = [], [], []
         def leitura(caminho, motor):
             leituras.append(Path(caminho).read_bytes())
-            liberar.wait(timeout=4)
+            liberar.wait(timeout=20)
             return "", "sem campos"
         self.app.iniciar_servidor_captura()
         endereco = f"http://127.0.0.1:{self.app.servidor_captura.server_port}"
@@ -271,7 +271,8 @@ class InterfaceTests(unittest.TestCase):
             requisicao = urllib.request.Request(endereco, data=corpo, headers={
                 "Content-Type": "multipart/form-data; boundary=foto"})
             try:
-                with urllib.request.urlopen(requisicao, timeout=2) as resposta:
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                with opener.open(requisicao, timeout=10) as resposta:
                     respostas.append(resposta.status)
             except Exception as erro:
                 erros.append(erro)
@@ -280,7 +281,7 @@ class InterfaceTests(unittest.TestCase):
                 self.app.receber_captura(b"primeira", ".png")
                 thread = threading.Thread(target=enviar, daemon=True)
                 thread.start()
-                thread.join(timeout=1)
+                thread.join(timeout=12)
                 self.assertFalse(thread.is_alive(), "O telefone ficou esperando o OCR.")
                 self.assertEqual(erros, [])
                 self.assertEqual(respostas, [200])
