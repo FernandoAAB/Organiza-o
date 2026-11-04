@@ -1,0 +1,2 @@
+# Mantem os scripts do cmd.exe com finais de linha do Windows.
+*.bat text eol=crlf

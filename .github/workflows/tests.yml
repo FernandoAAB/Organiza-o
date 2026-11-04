@@ -50,3 +50,6 @@ jobs:
       - name: Testar comparação e interface no Windows
         if: runner.os == 'Windows'
         run: uv run --frozen --no-sync --python "${{ matrix.python }}" python scripts/test.py --require-gui
+      - name: Testar inicializador no cmd.exe do Windows
+        if: runner.os == 'Windows'
+        run: uv run --frozen --no-sync --python "${{ matrix.python }}" python scripts/test_launcher.py

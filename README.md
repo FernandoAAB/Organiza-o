@@ -202,6 +202,11 @@ O aplicativo cria `a1.txt`, `a2.txt` e a pasta `No/` no diretório de execução
 Mantenha esse diretório ao reiniciar para acessar os mesmos dados. Esses arquivos
 são locais e ignorados pelo Git; faça cópias de segurança dos registros importantes.
 
+No Windows, você também pode abrir `iniciar.bat`. Mantenha o arquivo com
+finais de linha **CRLF**, preservados pelo `.gitattributes`. Se o terminal mostrar
+comandos cortados como `rrorlevel` ou `ho`, substitua o `.bat` pela versão atual
+do repositório; ao editar manualmente, salve como CRLF e sem BOM.
+
 ## Atualizar a cópia no computador
 
 Uma atualização no GitHub não substitui o programa já salvo no computador. A versão

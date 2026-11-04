@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
-echo Organização - Inicialização
+echo Organizacao - Inicializacao
 where uv >nul 2>&1
 if errorlevel 1 (
   echo Instale o uv com: python -m pip install uv
@@ -12,7 +12,7 @@ if errorlevel 1 (
 )
 uv sync --frozen --inexact
 if errorlevel 1 (
-  echo Não foi possível preparar as dependências. Confira a mensagem acima e a conexão.
+  echo Nao foi possivel preparar as dependencias. Confira a mensagem acima e a conexao.
   pause
   exit /b 1
 )
