@@ -5,7 +5,8 @@ import tempfile
 import threading
 import time
 import unittest
-import urllib.request
+import http.client
+import traceback
 from unittest.mock import patch
 from pathlib import Path
 
@@ -264,25 +265,31 @@ class InterfaceTests(unittest.TestCase):
             liberar.wait(timeout=20)
             return "", "sem campos"
         self.app.iniciar_servidor_captura()
-        endereco = f"http://127.0.0.1:{self.app.servidor_captura.server_port}"
+        porta = self.app.servidor_captura.server_port
         def enviar():
             corpo = (b'--foto\r\nContent-Disposition: form-data; name="documento"; '
                      b'filename="foto.png"\r\nContent-Type: image/png\r\n\r\nsegunda\r\n--foto--\r\n')
-            requisicao = urllib.request.Request(endereco, data=corpo, headers={
-                "Content-Type": "multipart/form-data; boundary=foto"})
+            conexao = http.client.HTTPConnection("127.0.0.1", porta, timeout=10)
             try:
-                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-                with opener.open(requisicao, timeout=10) as resposta:
-                    respostas.append(resposta.status)
+                conexao.request("POST", "/", body=corpo, headers={
+                    "Content-Type": "multipart/form-data; boundary=foto"})
+                resposta = conexao.getresponse()
+                respostas.append(resposta.status)
+                resposta.read()
             except Exception as erro:
                 erros.append(erro)
+            finally:
+                conexao.close()
         with patch.object(main, "executar_ocr_motor", side_effect=leitura):
             try:
                 self.app.receber_captura(b"primeira", ".png")
                 thread = threading.Thread(target=enviar, daemon=True)
                 thread.start()
                 thread.join(timeout=12)
-                self.assertFalse(thread.is_alive(), "O telefone ficou esperando o OCR.")
+                pilha = ""
+                if thread.is_alive():
+                    pilha = "".join(traceback.format_stack(sys._current_frames()[thread.ident]))
+                self.assertFalse(thread.is_alive(), "O telefone ficou esperando o OCR. " + pilha)
                 self.assertEqual(erros, [])
                 self.assertEqual(respostas, [200])
                 # Consome os envios sem deixar a primeira leitura terminar.
