@@ -122,11 +122,33 @@ class FilaOCR:
             db.execute("UPDATE fotos SET campos=? WHERE id=? AND estado='revisao'",
                        (json.dumps(campos, ensure_ascii=False), identificador))
 
-    def finalizar(self, identificador, estado):
+    def marcar_erro(self, identificador, motivo):
+        with self._conectar() as db:
+            db.execute("UPDATE fotos SET estado='erro', aviso=? WHERE id=? AND estado IN ('processando','revisao')",
+                       (motivo, identificador))
+
+    def reprocessar(self, identificador):
+        with self._conectar() as db:
+            db.execute('BEGIN IMMEDIATE')
+            foto = db.execute("SELECT imagem FROM fotos WHERE id=? AND estado='erro'", (identificador,)).fetchone()
+            if foto is None or not foto['imagem'] or not (self.imagens / foto['imagem']).is_file():
+                return False
+            return db.execute("UPDATE fotos SET estado='aguardando', texto='', aviso='', campos='{}' WHERE id=? AND estado='erro'",
+                              (identificador,)).rowcount == 1
+
+    def descartar_erro(self, identificador):
+        with self._conectar() as db:
+            alterou = db.execute("UPDATE fotos SET estado='descartada', aviso='Descartada por você após falha de leitura.' WHERE id=? AND estado='erro'",
+                                 (identificador,)).rowcount == 1
+        if alterou:
+            self.limpar_concluidas()
+        return alterou
+
+    def finalizar(self, identificador, estado, motivo=None):
         if estado not in ('concluida', 'descartada'):
             raise ValueError(estado)
         with self._conectar() as db:
-            db.execute("UPDATE fotos SET estado=? WHERE id=?", (estado, identificador))
+            db.execute("UPDATE fotos SET estado=?, aviso=COALESCE(?, aviso) WHERE id=?", (estado, motivo, identificador))
         self.limpar_concluidas()
 
     def limpar_concluidas(self):
@@ -160,23 +182,24 @@ class FilaOCR:
             pendentes = sum(totais.get(estado, 0) for estado in ('aguardando', 'processando', 'revisao'))
             pagina = min(pagina, max(0, (pendentes - 1) // limite))
             ativas = db.execute(
-                "SELECT id, estado FROM fotos WHERE estado IN ('aguardando','processando','revisao') ORDER BY id LIMIT ? OFFSET ?",
+                "SELECT id, estado, aviso FROM fotos WHERE estado IN ('aguardando','processando','revisao') ORDER BY id LIMIT ? OFFSET ?",
                 (limite, pagina * limite)).fetchall()
             recentes = db.execute(
-                "SELECT id, estado FROM fotos WHERE estado IN ('concluida','descartada') ORDER BY id DESC LIMIT 20").fetchall()
+                "SELECT id, estado, aviso FROM fotos WHERE estado IN ('concluida','descartada') ORDER BY id DESC LIMIT 20").fetchall()
+            erros = db.execute("SELECT id, estado, aviso FROM fotos WHERE estado='erro' ORDER BY id LIMIT 24").fetchall()
         def item(row):
-            return dict(id=row['id'], estado=row['estado'], previa=(
-                f"/fila/{row['id']}/previa" if row['estado'] in ('aguardando', 'processando', 'revisao') else None))
+            return dict(id=row['id'], estado=row['estado'], motivo=row['aviso'], previa=(
+                f"/fila/{row['id']}/previa" if row['estado'] in ('aguardando', 'processando', 'revisao', 'erro') else None))
         return dict(pagina=pagina, paginas=max(1, (pendentes + limite - 1) // limite),
                     totais=totais, pendentes=pendentes,
-                    folhas=[item(row) for row in ativas], recentes=[item(row) for row in recentes])
+                    folhas=[item(row) for row in ativas], recentes=[item(row) for row in recentes], erros=[item(row) for row in erros])
 
     def previa(self, identificador):
         from PIL import Image, ImageOps
         # Cache limitado de JPEGs pequenos; as fotos originais continuam no disco.
         with self._lock_previas:
             with self._conectar(timeout=0.1) as db:
-                foto = db.execute("SELECT imagem FROM fotos WHERE id=? AND estado IN ('aguardando','processando','revisao')",
+                foto = db.execute("SELECT imagem FROM fotos WHERE id=? AND estado IN ('aguardando','processando','revisao','erro')",
                                   (identificador,)).fetchone()
             if foto is None or not foto['imagem']:
                 self._previas.pop(identificador, None)
@@ -195,7 +218,7 @@ class FilaOCR:
                     fundo.save(dados, format='JPEG', quality=75)
                 # A leitura pode ter acabado enquanto a miniatura era gerada.
                 with self._conectar(timeout=0.1) as db:
-                    ativa = db.execute("SELECT 1 FROM fotos WHERE id=? AND estado IN ('aguardando','processando','revisao')",
+                    ativa = db.execute("SELECT 1 FROM fotos WHERE id=? AND estado IN ('aguardando','processando','revisao','erro')",
                                        (identificador,)).fetchone()
                 if not ativa:
                     return None

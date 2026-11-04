@@ -558,9 +558,9 @@ class _UploadHandler(BaseHTTPRequestHandler):
         }
         let paginaFolhas = 0;
         let consultandoPainel = false;
-        const mapasFolhas = {pendentes: new Map(), recentes: new Map()};
+        const mapasFolhas = {pendentes: new Map(), recentes: new Map(), erros: new Map()};
         const nomesEstados = {aguardando:'Aguardando leitura', processando:'Processando agora',
-          revisao:'Aguardando revisão no computador', concluida:'Concluída', descartada:'Descartada'};
+          revisao:'Aguardando revisão no computador', concluida:'Concluída', descartada:'Descartada', erro:'Falha no processamento'};
         function mostrarFolhas(itens, destino, mapa) {
           const presentes = new Set(itens.map(item => item.id));
           for (const [id, cartao] of mapa) {
@@ -575,13 +575,25 @@ class _UploadHandler(BaseHTTPRequestHandler):
               const numero = document.createElement('h3');
               numero.textContent = 'Folha ' + String(folha.id).padStart(4, '0');
               const estado = document.createElement('p');
+              const motivo = document.createElement('p'); motivo.className = 'motivo-folha';
+              const acoes = document.createElement('div'); acoes.className = 'acoes-folha';
+              for (const [acao, rotulo] of [['reprocessar','Tentar novamente'],['descartar','Descartar']]) {
+                const botao = document.createElement('button'); botao.type = 'button';
+                botao.textContent = rotulo;
+                botao.onclick = () => acaoFolha(folha.id, acao, botao);
+                acoes.appendChild(botao);
+              }
               texto.appendChild(numero); texto.appendChild(estado);
+              texto.appendChild(motivo); texto.appendChild(acoes);
               elemento.appendChild(miniatura); elemento.appendChild(texto);
-              cartao = {elemento, miniatura, estado, url:undefined};
+              cartao = {elemento, miniatura, estado, motivo, acoes, url:undefined};
               mapa.set(folha.id, cartao);
             }
             cartao.elemento.className = 'folha ' + folha.estado;
             cartao.estado.textContent = nomesEstados[folha.estado] || folha.estado;
+            cartao.motivo.textContent = folha.motivo || '';
+            cartao.motivo.hidden = !folha.motivo || folha.estado === 'concluida';
+            cartao.acoes.hidden = folha.estado !== 'erro';
             if (cartao.url !== folha.previa) {
               cartao.url = folha.previa;
               cartao.miniatura.textContent = '';
@@ -614,18 +626,36 @@ class _UploadHandler(BaseHTTPRequestHandler):
             paginaFolhas = dados.pagina;
             const totais = dados.totais;
             document.getElementById('resumo-folhas').textContent = dados.pendentes + ' pendente(s) · ' +
-              (totais.concluida || 0) + ' concluída(s) · ' + (totais.descartada || 0) + ' descartada(s)';
+              (totais.erro || 0) + ' com falha · ' + (totais.concluida || 0) + ' concluída(s) · ' + (totais.descartada || 0) + ' descartada(s)';
             document.getElementById('estado-conexao').textContent = 'Atualizado automaticamente';
             document.getElementById('pagina-folhas').textContent = 'Página ' + (dados.pagina + 1) + ' de ' + dados.paginas;
             document.getElementById('folhas-anteriores').disabled = dados.pagina === 0;
             document.getElementById('folhas-proximas').disabled = dados.pagina + 1 >= dados.paginas;
             mostrarFolhas(dados.folhas, document.getElementById('folhas-pendentes'), mapasFolhas.pendentes);
             mostrarFolhas(dados.recentes, document.getElementById('folhas-recentes'), mapasFolhas.recentes);
+            mostrarFolhas(dados.erros || [], document.getElementById('folhas-erros'), mapasFolhas.erros);
+            document.getElementById('sem-falhas').hidden = (totais.erro || 0) > 0;
             document.getElementById('fila-vazia').hidden = dados.pendentes > 0;
           } catch (erro) {
             document.getElementById('estado-conexao').textContent = 'Sem atualização. Confira a conexão com o computador.';
           } finally {
             consultandoPainel = false;
+          }
+        }
+        async function acaoFolha(id, acao, botao) {
+          botao.disabled = true;
+          const resultado = document.getElementById('resultado-acao');
+          resultado.textContent = 'Atualizando folha ' + id + '...';
+          try {
+            const resposta = await fetch('/fila/' + id + '/' + acao, {method:'POST',headers:{Accept:'application/json'}});
+            if (!resposta.ok) throw new Error(resposta.status === 409
+              ? 'A folha mudou de estado ou a imagem não está disponível.' : 'Não foi possível atualizar a folha.');
+            resultado.textContent = 'Folha ' + id + (acao === 'reprocessar' ? ' retornou à fila.' : ' foi descartada.');
+          } catch (erro) {
+            resultado.textContent = erro.message + ' Confira a conexão e atualize o painel.';
+          } finally {
+            botao.disabled = false;
+            consultarPainel();
           }
         }
         function mudarPaginaFolhas(delta) { paginaFolhas = Math.max(0, paginaFolhas + delta); consultarPainel(); }
@@ -667,6 +697,10 @@ button:active {{ transform: translateY(1px); }}
   border:1px solid #dce6ef; border-radius:12px; background:#f5f9fc; }}
 .folha.processando {{ border-color:#059669; border-width:2px; }}
 .folha.revisao {{ border-color:#d89a22; }}
+.folha.erro {{ border-color:#d43e45; }}
+.motivo-folha {{ margin-top:8px !important; overflow-wrap:anywhere; max-height:130px; overflow:auto; }}
+.acoes-folha button {{ font-size:.85rem; padding:8px; margin-top:8px; }}
+.acoes-folha[hidden] {{ display:none; }}
 .miniatura {{ width:100px; min-width:100px; height:130px; display:flex; align-items:center;
   justify-content:center; background:#e5edf5; border-radius:6px; overflow:hidden;
   font-size:1.2rem; font-weight:700; color:#344e69; text-align:center; }}
@@ -717,8 +751,11 @@ Mantenha esta página aberta até a confirmação.</p>
 <span id="pagina-folhas"></span>
 <button type="button" id="folhas-proximas" onclick="mudarPaginaFolhas(1)" disabled>Próxima</button>
 </nav>
+<h3>Falhas no processamento</h3>
+<p id="sem-falhas">Nenhuma falha registrada.</p>
+<div id="folhas-erros"></div><p id="resultado-acao" role="status" aria-live="polite"></p>
 <h3>Últimas folhas finalizadas</h3><div id="folhas-recentes"></div>
-<p class="ajuda">A prévia é temporária: ao concluir ou descartar, a imagem sai e o número da folha permanece. Toque na miniatura para ampliar.</p>
+<p class="ajuda">A prévia é temporária: ao concluir ou descartar, a imagem sai e o número da folha permanece. Fotos com falha ficam preservadas para tentar novamente. Toque na miniatura para ampliar.</p>
 </section>
 <script>{script}</script>
 </main></body></html>"""
@@ -764,6 +801,20 @@ Mantenha esta página aberta até a confirmação.</p>
         self.send_error(404)
 
     def do_POST(self):
+        acao = re.fullmatch(r'/fila/([1-9][0-9]{0,17})/(reprocessar|descartar)', urlsplit(self.path).path)
+        if acao:
+            fila = getattr(self.server, 'fila_ocr', None)
+            if fila is None:
+                self.send_error(404)
+                return
+            try:
+                metodo = fila.reprocessar if acao.group(2) == 'reprocessar' else fila.descartar_erro
+                alterou = metodo(int(acao.group(1)))
+            except (OSError, sqlite3.Error):
+                self.send_error(503, "Nao foi possivel atualizar a folha")
+                return
+            self.responder(json.dumps(dict(ok=alterou)).encode('utf-8'), 'application/json', 200 if alterou else 409)
+            return
         try:
             tamanho = int(self.headers.get("Content-Length", "0"))
         except ValueError:
@@ -1435,15 +1486,15 @@ class App(ctk.CTk):
                       for nome in ("descricao", "data", "valor", "tipo")}
             self.fila_ocr.salvar_campos(self.captura_id, campos)
 
-    def finalizar_foto_captura(self, estado):
+    def finalizar_foto_captura(self, estado, motivo=None):
         if self.captura_id is not None:
-            self.fila_ocr.finalizar(self.captura_id, estado)
+            self.fila_ocr.finalizar(self.captura_id, estado, motivo)
             self.captura_id = None
 
     def descartar_captura(self):
         if self.captura_processando or self.captura_pendente is None:
             return
-        self.finalizar_foto_captura("descartada")
+        self.finalizar_foto_captura("descartada", "Descartada por você.")
         self.captura_pendente = None
         self.atualizar_fila_captura()
         self.captura_aviso.set("Documento descartado e não adicionado ao A2.")
@@ -1550,14 +1601,15 @@ class App(ctk.CTk):
         self.captura_texto.delete("1.0", "end")
         self.captura_texto.insert("1.0", texto)
         if not campos["data"] or not campos["valor"] or campos["tipo"] not in ("D", "C"):
-            self.finalizar_foto_captura("descartada")
+            motivo = aviso or "Não foi possível identificar data, valor e tipo na imagem."
+            if self.captura_id is not None:
+                self.fila_ocr.marcar_erro(self.captura_id, motivo)
+                self.captura_id = None
             self.captura_pendente = None
             self.atualizar_fila_captura()
             self.trocar_aba("Captura")
-            self.captura_aviso.set(
-                (aviso + " " if aviso else "Não foi possível identificar a imagem. ")
-                + "Documento descartado e não adicionado ao A2.")
-            self.status.set("Imagem não identificada; documento descartado.")
+            self.captura_aviso.set(motivo + " Foto preservada nas falhas do painel; tente novamente ou descarte.")
+            self.status.set("Falha de leitura. Foto preservada; seguindo a fila.")
             self.after_idle(self.processar_proxima_captura)
             return
         self.captura_pendente = {"texto": texto}
@@ -1610,7 +1662,7 @@ class App(ctk.CTk):
             self.captura_aviso.set(
                 "Documento não encontrado no A1. Não foi adicionado ao A2.")
             self.status.set("Documento não encontrado no A1.")
-            self.finalizar_foto_captura("descartada")
+            self.finalizar_foto_captura("descartada", "Documento não encontrado no A1 por data, valor e tipo.")
             self.captura_pendente = None
             self.atualizar_fila_captura()
             self.processar_proxima_captura()
@@ -1713,7 +1765,8 @@ class App(ctk.CTk):
                    largura=250).pack(anchor="e", pady=(0, 4))
 
     def atualizar_fila_captura(self):
-        self.fila_captura.set(f"Fila: {self.fila_ocr.quantidade()} foto(s)")
+        erros = self.fila_ocr.quantidade('erro')
+        self.fila_captura.set(f"Fila: {self.fila_ocr.quantidade()} foto(s)" + (f" | Falhas: {erros}" if erros else ""))
 
     def mudar_tema(self, modo):
         self.modo = modo

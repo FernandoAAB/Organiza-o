@@ -113,8 +113,12 @@ nos números, o documento aguarda revisão e confirmação manual antes de entra
 no A2. Cada leitura tem limite de 20 segundos. Na interpretação, rótulos como
 **Total**, **Total a pagar**, **Valor final** e **Pago** têm prioridade sobre
 subtotal, itens e troco.
-Se o OCR não conseguir identificar os campos essenciais, a foto é descartada
-com um aviso na tela e não fica presa aguardando revisão. Duplicidades e
+Se o OCR falhar ou não conseguir identificar os campos essenciais, a folha
+aparece em **Falhas no processamento**, com o motivo e a imagem preservada.
+As outras fotos continuam na fila. No painel do telefone, **Tentar novamente**
+recoloca a mesma folha na fila, com o mesmo número; **Descartar** remove sua
+imagem e registra o descarte. Falhas ficam guardadas ao reiniciar e só são
+reprocessadas quando solicitado. Duplicidades e
 documentos sem correspondência permanecem para revisão. A linha incluída recebe
 uma cor própria na conferência **A1 × A2** durante a sessão.
 Ao escolher uma foto no celular, o envio começa automaticamente; não é
@@ -162,7 +166,7 @@ não é necessário instalar o Tesseract no Windows. No Linux, instale o execut�
 pelo gerenciador do sistema; o modelo de português incluído no projeto também
 é utilizado. Se a cópia portátil não estiver presente no Windows, o aplicativo
 tenta usar uma instalação disponível no sistema. Se o OCR falhar ou não extrair
-os campos essenciais, o aplicativo informa o descarte da foto. Quando houver
+os campos essenciais, o aplicativo informa a falha e preserva a foto para nova tentativa. Quando houver
 texto com campos essenciais, mas leitura incerta, os campos ficam editáveis
 para revisão manual. O servidor aceita somente imagens de até 15 MB e deve ser parado depois
 do uso. Se a conexão do telefone cair durante o envio, a foto incompleta não

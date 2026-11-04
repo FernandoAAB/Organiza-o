@@ -154,7 +154,7 @@ class FilaOCRTests(unittest.TestCase):
         self.assertIsNone(self.fila.previa(identificador))
         painel = self.fila.painel()
         self.assertEqual(painel['folhas'], [])
-        self.assertEqual(painel['recentes'][0], dict(id=identificador, estado='concluida', previa=None))
+        self.assertEqual(painel['recentes'][0], dict(id=identificador, estado='concluida', motivo='revisar', previa=None))
         self.assertEqual(painel['totais']['concluida'], 1)
 
     def test_painel_paginado_preserva_ordem_e_ids(self):
@@ -181,3 +181,36 @@ class FilaOCRTests(unittest.TestCase):
         identificador = self.fila.adicionar(b'foto invalida', '.png')
         self.assertIsNone(self.fila.previa(identificador))
         self.assertEqual(self.fila.quantidade(), 1)
+
+    def test_erro_preserva_motivo_previa_e_numero_ao_tentar_novamente(self):
+        identificador = self.fila.adicionar(self.foto_png(), '.png')
+        self.fila.proxima('PaddleOCR')
+        self.fila.resultado(identificador, '', 'Modelo indisponível', {})
+        self.fila.marcar_erro(identificador, 'Modelo indisponível')
+        self.assertEqual(self.fila.quantidade('erro'), 1)
+        self.assertEqual(self.fila.quantidade(), 0)
+        folha = self.fila.painel()['erros'][0]
+        self.assertEqual(folha['id'], identificador)
+        self.assertEqual(folha['motivo'], 'Modelo indisponível')
+        self.assertIsNotNone(self.fila.previa(identificador))
+        self.fila.recuperar()
+        self.assertEqual(self.fila.painel()['erros'][0]['id'], identificador)
+        self.assertTrue(self.fila.reprocessar(identificador))
+        self.assertFalse(self.fila.reprocessar(identificador))
+        foto = self.fila.proxima('Tesseract')
+        self.assertEqual(foto['id'], identificador)
+        self.assertEqual(foto['motor'], 'PaddleOCR')
+
+    def test_erro_nao_bloqueia_outros_envios_e_descarte_e_explicito(self):
+        primeiro, segundo = self.fila.adicionar_lote([(b'erro', '.png'), (b'outra', '.png')])
+        self.fila.proxima('Tesseract')
+        self.assertFalse(self.fila.descartar_erro(primeiro))
+        self.fila.marcar_erro(primeiro, 'Falha de leitura')
+        self.assertEqual(self.fila.proxima('Tesseract')['id'], segundo)
+        self.assertTrue(self.fila.descartar_erro(primeiro))
+        self.assertFalse(self.fila.descartar_erro(segundo))
+        self.assertIsNone(self.fila.previa(primeiro))
+        folha = self.fila.painel()['recentes'][0]
+        self.assertEqual(folha['id'], primeiro)
+        self.assertEqual(folha['estado'], 'descartada')
+        self.assertIn('por você', folha['motivo'])

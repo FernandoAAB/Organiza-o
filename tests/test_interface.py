@@ -551,7 +551,7 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(main.carregar_linhas("a2.txt"), [])
         self.assertIn("não encontrado no A1", self.app.captura_aviso.get())
 
-    def test_captura_sem_campos_identificados_e_descartada(self):
+    def test_captura_sem_campos_identificados_preserva_foto_com_erro(self):
         Path("a1.txt").write_text(
             "03/11/2026 Mercado Teste 123,45D\n", encoding="utf-8")
         self.app.atualizar_tudo()
@@ -564,7 +564,9 @@ class InterfaceTests(unittest.TestCase):
         self.assertIsNone(self.app.captura_pendente)
         self.assertEqual(main.carregar_linhas("a2.txt"), [])
         self.assertIn("imagem", self.app.captura_aviso.get().lower())
-        self.assertIn("descartado", self.app.captura_aviso.get().lower())
+        self.assertIn("preservada", self.app.captura_aviso.get().lower())
+        self.assertEqual(self.app.fila_ocr.quantidade('erro'), 1)
+        self.assertEqual(len(list(self.app.fila_ocr.imagens.iterdir())), 1)
 
     def test_comparacao_mantem_ok_verde_e_captura_amarela(self):
         Path("a1.txt").write_text(

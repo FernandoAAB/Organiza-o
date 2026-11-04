@@ -253,6 +253,7 @@ class UploadInterrompidoTests(unittest.TestCase):
         corpo = corpo or (b'--teste\r\nContent-Disposition: form-data; name="documento"; '
                           b'filename="foto.png"\r\n\r\nimagem\r\n--teste--\r\n')
         handler = object.__new__(main._UploadHandler)
+        handler.path = '/'
         handler.headers = {"Content-Length": str(len(corpo)),
                            "Content-Type": "multipart/form-data; boundary=teste"}
         handler.rfile = Mock()
@@ -405,3 +406,25 @@ class PainelFolhasHTTPTests(unittest.TestCase):
                                   ('/fila?pagina=abc', 400)):
             with self.subTest(caminho=caminho):
                 self.assertEqual(self.requisitar('GET', caminho)[0], esperado)
+
+    def test_folha_com_erro_pode_ser_reprocessada_ou_descartada_sem_duplicar(self):
+        import json
+        identificador = self.fila.adicionar(b'foto de teste', '.png')
+        self.fila.proxima('Tesseract')
+        self.fila.marcar_erro(identificador, 'Falha de processamento de teste')
+        painel = json.loads(self.requisitar('GET', '/fila')[2])
+        self.assertEqual(painel['erros'][0]['id'], identificador)
+        self.assertIn('Falha de processamento', painel['erros'][0]['motivo'])
+        rota = f'/fila/{identificador}'
+        self.assertEqual(self.requisitar('POST', rota + '/reprocessar')[0], 200)
+        self.assertEqual(self.requisitar('POST', rota + '/reprocessar')[0], 409)
+        self.assertEqual(self.requisitar('POST', rota + '/descartar')[0], 409)
+        foto = self.fila.proxima('Tesseract')
+        self.assertEqual(foto['id'], identificador)
+        self.fila.marcar_erro(identificador, 'Outra falha')
+        self.assertEqual(self.requisitar('POST', rota + '/descartar')[0], 200)
+        self.assertEqual(self.requisitar('GET', rota + '/previa')[0], 410)
+        painel = json.loads(self.requisitar('GET', '/fila')[2])
+        self.assertEqual(painel['erros'], [])
+        self.assertEqual(painel['recentes'][0]['id'], identificador)
+        self.assertEqual(painel['recentes'][0]['estado'], 'descartada')
