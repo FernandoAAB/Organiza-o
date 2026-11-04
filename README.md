@@ -114,7 +114,11 @@ documentos sem correspondência permanecem para revisão. A linha incluída rece
 uma cor própria na conferência **A1 × A2** durante a sessão.
 Ao escolher uma foto no celular, o envio começa automaticamente; não é
 necessário clicar em outro botão. O formulário aceita várias fotos na mesma
-remessa e mantém uma fila de revisão. Durante o OCR, a imagem usa um arquivo
+remessa e mantém uma fila de revisão. Todos os motores leem em segundo plano,
+uma foto por vez; novos envios entram na fila sem bloquear a janela. Quando
+uma foto precisa de revisão, confirme-a ou use **Descartar foto e seguir fila**
+para liberar a próxima. Receber outra foto não apaga os avisos da revisão atual.
+Durante o OCR, a imagem usa um arquivo
 temporário, removido ao concluir a leitura; o aplicativo não arquiva as fotos. A validação automática inclui no `a2.txt`
 somente a linha correspondente do `a1.txt`; a conferência continua sendo feita
 exclusivamente entre esses dois arquivos.

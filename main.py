@@ -1083,8 +1083,8 @@ class App(ctk.CTk):
             self.status.set("Não foi possível iniciar o servidor de captura.")
             messagebox.showerror("Servidor de captura", str(erro), parent=self)
             return
-        servidor.captura_callback = lambda conteudo, extensao: self.after(
-            0, self.receber_captura, conteudo, extensao)
+        servidor.captura_callback = lambda conteudo, extensao: (
+            self.entradas_captura.put((conteudo, extensao)))
         self.servidor_captura = servidor
         self.thread_servidor_captura = threading.Thread(
             target=servidor.serve_forever, daemon=True)
@@ -1115,13 +1115,33 @@ class App(ctk.CTk):
         self.qr_imagem = ImageTk.PhotoImage(imagem, master=self)
         self.qr_captura.configure(text="", image=self.qr_imagem)
 
+    def receber_fotos_enfileiradas(self):
+        # Só a thread da interface toca nos widgets; a rede apenas entrega dados.
+        for _ in range(10):
+            try:
+                conteudo, extensao = self.entradas_captura.get_nowait()
+            except queue.Empty:
+                break
+            self.receber_captura(conteudo, extensao)
+        self.after(50, self.receber_fotos_enfileiradas)
+
+    def descartar_captura(self):
+        if self.captura_processando or self.captura_pendente is None:
+            return
+        self.captura_pendente = None
+        self.atualizar_fila_captura()
+        self.captura_aviso.set("Documento descartado e não adicionado ao A2.")
+        self.status.set("Documento descartado; seguindo a fila.")
+        self.after_idle(self.processar_proxima_captura)
+
     def receber_captura(self, conteudo, extensao):
         self.capturas_fila.append((conteudo, extensao))
         self.atualizar_fila_captura()
         if self.captura_pendente is not None or self.captura_processando:
-            self.captura_aviso.set(
-                f"Foto recebida. A foto atual está em leitura ou revisão; "
-                f"{len(self.capturas_fila)} foto(s) depois dela.")
+            if self.captura_pendente is None:
+                self.captura_aviso.set(
+                    f"Foto recebida. A foto atual está em leitura; "
+                    f"{len(self.capturas_fila)} foto(s) depois dela.")
             self.status.set(f"Foto recebida; {len(self.capturas_fila)} na fila.")
             return
         self.processar_proxima_captura()
@@ -1138,16 +1158,17 @@ class App(ctk.CTk):
         self.captura_texto.delete("1.0", "end")
         self.captura_aviso.set("Processando a próxima foto...")
         motor = self.motor_ocr.get()
-        if motor != "Tesseract":
-            self.captura_processando = True
-            self.atualizar_fila_captura()
-            self.captura_aviso.set("Lendo com " + motor + ". A primeira leitura pode preparar os modelos.")
-            def tarefa():
-                self.resultados_ocr.put(self.ler_imagem_captura(conteudo, extensao, motor))
-            threading.Thread(target=tarefa, daemon=True).start()
-            self.after(50, self.verificar_resultado_ocr)
-            return
-        self.apresentar_resultado_ocr(*self.ler_imagem_captura(conteudo, extensao, motor))
+        self.captura_processando = True
+        self.atualizar_fila_captura()
+        self.captura_aviso.set("Lendo com " + motor + ". Aguarde o processamento.")
+        def tarefa():
+            try:
+                resultado = self.ler_imagem_captura(conteudo, extensao, motor)
+            except Exception as erro:
+                resultado = ("", f"Não foi possível ler a imagem: {erro}")
+            self.resultados_ocr.put(resultado)
+        threading.Thread(target=tarefa, daemon=True).start()
+        self.after(50, self.verificar_resultado_ocr)
 
     @staticmethod
     def ler_imagem_captura(conteudo, extensao, motor):
@@ -1161,7 +1182,11 @@ class App(ctk.CTk):
             return "", f"Não foi possível ler a imagem: {erro}"
         finally:
             if temporario is not None:
-                Path(temporario).unlink(missing_ok=True)
+                try:
+                    Path(temporario).unlink(missing_ok=True)
+                except OSError as erro:
+                    # Uma falha de limpeza não pode interromper a fila de OCR.
+                    print(f"Não foi possível remover a imagem temporária: {erro}", file=sys.stderr)
 
     def verificar_resultado_ocr(self):
         try:
@@ -1189,7 +1214,7 @@ class App(ctk.CTk):
                 (aviso + " " if aviso else "Não foi possível identificar a imagem. ")
                 + "Documento descartado e não adicionado ao A2.")
             self.status.set("Imagem não identificada; documento descartado.")
-            self.processar_proxima_captura()
+            self.after_idle(self.processar_proxima_captura)
             return
         self.captura_pendente = {"texto": texto}
         self.atualizar_fila_captura()
@@ -1198,7 +1223,9 @@ class App(ctk.CTk):
         self.trocar_aba("Captura")
         self.status.set("Documento recebido para revisão.")
         if not aviso:
-            self.after_idle(lambda: self.confirmar_captura(automatico=True))
+            documento = self.captura_pendente
+            self.after_idle(lambda: self.confirmar_captura(automatico=True)
+                            if self.captura_pendente is documento else None)
 
     def confirmar_captura(self, automatico=False):
         if self.captura_pendente is None:
@@ -1270,6 +1297,8 @@ class App(ctk.CTk):
     def _montar_aba_captura(self):
         self.captura_processando = False
         self.resultados_ocr = queue.Queue()
+        self.entradas_captura = queue.Queue()
+        self.after(50, self.receber_fotos_enfileiradas)
         self.motor_ocr = tk.StringVar(value="Tesseract")
         self.aba_captura.grid_columnconfigure(0, weight=1)
         self.aba_captura.grid_columnconfigure(1, weight=1)
@@ -1324,6 +1353,8 @@ class App(ctk.CTk):
         self.captura_texto.pack(fill="both", expand=True)
         self.botao(direita, "Verificar no A1 e adicionar ao A2", self.confirmar_captura,
                    primario=True, largura=250).pack(anchor="e", pady=(10, 4))
+        self.botao(direita, "Descartar foto e seguir fila", self.descartar_captura,
+                   largura=250).pack(anchor="e", pady=(0, 4))
 
     def atualizar_fila_captura(self):
         pendente = 1 if self.captura_pendente is not None or self.captura_processando else 0

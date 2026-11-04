@@ -76,3 +76,13 @@ class OCRTests(unittest.TestCase):
             self.ler([resultado('Pagamento 123,45')] * 2)
             self.assertEqual(main.pytesseract.pytesseract.tesseract_cmd, 'tesseract')
             self.assertEqual(os.environ.get('TESSDATA_PREFIX'), anterior)
+
+    def test_falha_ao_remover_temporario_preserva_resultado_do_ocr(self):
+        with patch.object(main, 'executar_ocr_motor', return_value=('texto', 'aviso')) as ler:
+            with patch.object(main.Path, 'unlink', side_effect=PermissionError('em uso')):
+                resultado = main.App.ler_imagem_captura(b'foto', '.png', 'PaddleOCR')
+            caminho = Path(ler.call_args.args[0])
+            try:
+                self.assertEqual(resultado, ('texto', 'aviso'))
+            finally:
+                caminho.unlink(missing_ok=True)

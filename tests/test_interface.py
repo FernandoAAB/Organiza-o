@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.request
 from unittest.mock import patch
 from pathlib import Path
 
@@ -170,6 +171,7 @@ class InterfaceTests(unittest.TestCase):
                     "Mercado Teste\n03/11/2026\nTotal a pagar R$ 123,45\n",
                     "")):
             self.app.receber_captura(b"imagem ficticia", ".png")
+            self.aguardar_ocr()
             self.app.update_idletasks()
             self.app.update()
         self.assertEqual(main.carregar_linhas("a2.txt"),
@@ -183,6 +185,7 @@ class InterfaceTests(unittest.TestCase):
         with patch.object(main, "executar_ocr", return_value=(
                 "Mercado\n04/11/2026\nTotal a pagar R$ 123,45", "Leitura incerta")):
             self.app.receber_captura(b"imagem ficticia", ".png")
+            self.aguardar_ocr()
             self.app.update()
         self.assertEqual(main.carregar_linhas("a2.txt"), [])
         self.assertIsNotNone(self.app.captura_pendente)
@@ -197,9 +200,145 @@ class InterfaceTests(unittest.TestCase):
         with patch.object(main, "executar_ocr", return_value=(
                 "Mercado\n04/11/2026\nTotal a pagar R$ 100,00", "")):
             self.app.receber_captura(b"imagem ficticia", ".png")
+            self.aguardar_ocr()
             self.app.update()
         self.assertEqual(main.carregar_linhas("a2.txt"), [])
         self.assertIn("não encontrado", self.app.captura_aviso.get())
+
+    def aguardar_ocr(self):
+        limite = time.monotonic() + 4
+        while self.app.captura_processando and time.monotonic() < limite:
+            self.app.update()
+            time.sleep(0.01)
+        self.app.update()
+        self.assertFalse(self.app.captura_processando)
+
+    def test_tesseract_recebe_segunda_foto_sem_bloquear_a_janela(self):
+        liberar = threading.Event()
+        chamadas = []
+        def leitura(*args):
+            chamadas.append(threading.get_ident())
+            liberar.wait(timeout=1)
+            return "", "imagem sem campos"
+        with patch.object(main, "executar_ocr_motor", side_effect=leitura):
+            try:
+                self.app.receber_captura(b"foto um", ".png")
+                self.app.receber_captura(b"foto dois", ".png")
+                self.assertTrue(self.app.captura_processando)
+                self.assertEqual(len(self.app.capturas_fila), 1)
+                eventos = []
+                self.app.after_idle(lambda: eventos.append("responsiva"))
+                self.app.update()
+                self.assertEqual(eventos, ["responsiva"])
+            finally:
+                liberar.set()
+                self.aguardar_ocr()
+                self.aguardar_ocr()
+        self.assertEqual(len(chamadas), 2)
+        self.assertNotIn(threading.get_ident(), chamadas)
+
+    def test_recebimento_pelo_servidor_nao_depende_da_interface(self):
+        self.app.iniciar_servidor_captura()
+        recebidos, erros = [], []
+        def receber():
+            try:
+                self.app.servidor_captura.captura_callback(b"foto", ".png")
+                recebidos.append(True)
+            except Exception as erro:
+                erros.append(erro)
+        with patch.object(self.app, "after", side_effect=AssertionError("Rede acessou Tk")):
+            thread = threading.Thread(target=receber, daemon=True)
+            thread.start()
+            thread.join(timeout=1)
+        self.app.parar_servidor_captura()
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(erros, [])
+        self.assertEqual(recebidos, [True])
+        self.assertEqual(self.app.entradas_captura.get_nowait(), (b"foto", ".png"))
+
+    def test_upload_de_outra_foto_responde_enquanto_ocr_esta_ocupado(self):
+        liberar = threading.Event()
+        respostas, erros, leituras = [], [], []
+        def leitura(caminho, motor):
+            leituras.append(Path(caminho).read_bytes())
+            liberar.wait(timeout=4)
+            return "", "sem campos"
+        self.app.iniciar_servidor_captura()
+        endereco = f"http://127.0.0.1:{self.app.servidor_captura.server_port}"
+        def enviar():
+            corpo = (b'--foto\r\nContent-Disposition: form-data; name="documento"; '
+                     b'filename="foto.png"\r\nContent-Type: image/png\r\n\r\nsegunda\r\n--foto--\r\n')
+            requisicao = urllib.request.Request(endereco, data=corpo, headers={
+                "Content-Type": "multipart/form-data; boundary=foto"})
+            try:
+                with urllib.request.urlopen(requisicao, timeout=2) as resposta:
+                    respostas.append(resposta.status)
+            except Exception as erro:
+                erros.append(erro)
+        with patch.object(main, "executar_ocr_motor", side_effect=leitura):
+            try:
+                self.app.receber_captura(b"primeira", ".png")
+                thread = threading.Thread(target=enviar, daemon=True)
+                thread.start()
+                thread.join(timeout=1)
+                self.assertFalse(thread.is_alive(), "O telefone ficou esperando o OCR.")
+                self.assertEqual(erros, [])
+                self.assertEqual(respostas, [200])
+                # Consome os envios sem deixar a primeira leitura terminar.
+                self.app.receber_fotos_enfileiradas()
+                self.assertTrue(self.app.captura_processando)
+                self.assertEqual(len(self.app.capturas_fila), 1)
+            finally:
+                liberar.set()
+                self.aguardar_ocr()
+                self.app.parar_servidor_captura()
+        self.assertEqual(leituras, [b"primeira", b"segunda"])
+
+    def test_fila_processa_tres_fotos_em_ordem_com_todos_os_motores(self):
+        origem = [f"04/11/2026 Loja {n} {n}00,00D" for n in (1, 2, 3)]
+        Path("a1.txt").write_text("\n".join(origem), encoding="utf-8")
+        for motor in ("Tesseract", "PaddleOCR", "Comparar"):
+            with self.subTest(motor=motor):
+                Path("a2.txt").write_text("", encoding="utf-8")
+                self.app.motor_ocr.set(motor)
+                chamadas = []
+                def leitura(caminho, escolhido):
+                    n = Path(caminho).read_bytes().decode()
+                    chamadas.append((n, escolhido))
+                    return f"Loja {n}\n04/11/2026\nTotal a pagar {n}00,00D", ""
+                with patch.object(main, "executar_ocr_motor", side_effect=leitura):
+                    for n in (1, 2, 3):
+                        self.app.receber_captura(str(n).encode(), ".png")
+                    self.aguardar_ocr()
+                self.assertEqual(chamadas, [(str(n), motor) for n in (1, 2, 3)])
+                self.assertEqual(main.carregar_linhas("a2.txt"),
+                                 [f"[{n}] {linha}" for n, linha in enumerate(origem, 1)])
+                self.assertEqual(self.app.fila_captura.get(), "Fila: 0 foto(s)")
+
+    def test_erro_inesperado_no_worker_nao_prende_proxima_foto(self):
+        with patch.object(self.app, "ler_imagem_captura", side_effect=[
+                RuntimeError("falha simulada"),
+                ("Loja\n04/11/2026\nTotal a pagar 200,00D", "Revisar")]):
+            self.app.receber_captura(b"um", ".png")
+            self.app.receber_captura(b"dois", ".png")
+            self.aguardar_ocr()
+        self.assertIsNotNone(self.app.captura_pendente)
+        self.assertEqual(self.app.captura_valor.get(), "200.00")
+        self.assertEqual(self.app.capturas_fila, [])
+
+    def test_descartar_nao_confirma_documento_e_libera_fila(self):
+        self.app.apresentar_resultado_ocr("Loja\n04/11/2026\nTotal a pagar 100,00D", "")
+        with patch.object(main, "executar_ocr_motor", return_value=(
+                "Outra loja\n04/11/2026\nTotal a pagar 200,00D", "Leitura incerta")):
+            self.app.receber_captura(b"outra", ".png")
+            self.app.descartar_captura()
+            self.app.update()
+            self.aguardar_ocr()
+        self.assertEqual(main.carregar_linhas("a2.txt"), [])
+        self.assertEqual(self.app.captura_valor.get(), "200.00")
+        self.assertIn("incerta", self.app.captura_aviso.get())
+        self.app.receber_captura(b"mais uma", ".png")
+        self.assertIn("incerta", self.app.captura_aviso.get())
 
     def test_paddle_processa_sem_bloquear_interface_e_preserva_fila(self):
         Path("a1.txt").write_text("04/11/2026 Mercado 123,45D\n", encoding="utf-8")
@@ -239,6 +378,7 @@ class InterfaceTests(unittest.TestCase):
                     "Mercado Teste\n03/11/2026\nTotal a pagar R$ 123,45\n",
                     "")):
             self.app.receber_captura(b"imagem ficticia", ".png")
+            self.aguardar_ocr()
             self.app.update_idletasks()
             self.app.update()
         self.assertIsNone(self.app.captura_pendente)
@@ -252,6 +392,7 @@ class InterfaceTests(unittest.TestCase):
         with patch.object(main, "executar_ocr", return_value=(
                     "imagem sem texto financeiro", "")):
             self.app.receber_captura(b"imagem ficticia", ".png")
+            self.aguardar_ocr()
             self.app.update_idletasks()
             self.app.update()
         self.assertIsNone(self.app.captura_pendente)
