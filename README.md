@@ -152,7 +152,12 @@ tenta usar uma instalação disponível no sistema. Se o OCR falhar ou não extr
 os campos essenciais, o aplicativo informa o descarte da foto. Quando houver
 texto com campos essenciais, mas leitura incerta, os campos ficam editáveis
 para revisão manual. O servidor aceita somente imagens de até 15 MB e deve ser parado depois
-do uso. O recurso não interpreta contratos nem substitui a conferência humana.
+do uso. Se a conexão do telefone cair durante o envio, a foto incompleta não
+entra na fila; envie-a novamente e aguarde a confirmação de recebimento.
+Fotos já confirmadas permanecem na fila mesmo se a resposta ao telefone for
+interrompida. No Windows, a seleção rápida do terminal é desativada na
+inicialização para evitar pausas acidentais; se o título mostrar **Selecionar**,
+pressione **Esc** para sair desse modo. O recurso não interpreta contratos nem substitui a conferência humana.
 
 ### PaddleOCR opcional e comparação dos mecanismos
 

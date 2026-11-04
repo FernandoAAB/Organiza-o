@@ -35,7 +35,7 @@ except ImportError:
 
 import customtkinter as ctk  # pip install customtkinter
 from fila_ocr import FilaOCR
-from ocr_runtime import ExecutorOCR
+from ocr_runtime import ExecutorOCR, preparar_console_windows
 import ocr_paddle  # Adaptador leve; os modelos só carregam quando selecionados.
 
 # A1 guarda a origem; A2 registra os itens escolhidos com a referência da linha original.
@@ -465,6 +465,18 @@ class _CaptureHTTPServer(ThreadingHTTPServer):
 class _UploadHandler(BaseHTTPRequestHandler):
     server_version = "OrganizacaoCapture/1.0"
 
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(30)
+
+    def handle(self):
+        try:
+            super().handle()
+        except (ConnectionError, TimeoutError):
+            # O telefone pode cancelar o envio ou sair da rede a qualquer momento.
+            # As fotos só entram na fila após receber e validar o corpo completo.
+            self.close_connection = True
+
     @staticmethod
     def pagina_upload(mensagem=""):
         aviso = f"<p class='aviso'>{escape(mensagem)}</p>" if mensagem else ""
@@ -540,12 +552,18 @@ automaticamente.</p>
             self.send_error(413, "Arquivo vazio ou maior que 15 MB")
             return
         corpo = self.rfile.read(tamanho)
+        if len(corpo) != tamanho:
+            self.send_error(400, "Envio incompleto. Envie a foto novamente.")
+            return
         limite = self.headers.get("Content-Type", "")
         correspondencia = re.search(r'boundary="?([^";]+)', limite)
         if correspondencia is None:
             self.send_error(400, "Envio multipart inválido")
             return
         separador = ("--" + correspondencia.group(1)).encode()
+        if not corpo.rstrip(b"\r\n").endswith(separador + b"--"):
+            self.send_error(400, "Envio incompleto. Envie a foto novamente.")
+            return
         partes = corpo.split(separador)
         arquivos = []
         for parte in partes:
@@ -1172,7 +1190,7 @@ class App(ctk.CTk):
             return
         imagem = qrcode.make(endereco).convert("RGB")
         imagem.thumbnail((220, 220))
-        self.qr_imagem = ImageTk.PhotoImage(imagem, master=self)
+        self.qr_imagem = ctk.CTkImage(light_image=imagem, dark_image=imagem, size=imagem.size)
         self.qr_captura.configure(text="", image=self.qr_imagem)
 
     def receber_fotos_enfileiradas(self):
@@ -1922,5 +1940,6 @@ class App(ctk.CTk):
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+    preparar_console_windows()
     inicializar_arquivos()
     App().mainloop()

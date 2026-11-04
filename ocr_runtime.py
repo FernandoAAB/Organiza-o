@@ -6,6 +6,29 @@ import time
 import tempfile
 
 
+def preparar_console_windows():
+    """Evita que um clique na janela do cmd pause as saídas do OCR."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    from ctypes import wintypes
+    try:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.GetStdHandle.argtypes = [wintypes.DWORD]
+        kernel.GetStdHandle.restype = wintypes.HANDLE
+        kernel.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel.GetConsoleMode.restype = wintypes.BOOL
+        kernel.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.SetConsoleMode.restype = wintypes.BOOL
+        entrada = kernel.GetStdHandle(-10)
+        modo = wintypes.DWORD()
+        if not kernel.GetConsoleMode(entrada, ctypes.byref(modo)):
+            return False  # Execução sem um console, por exemplo com pythonw.exe.
+        return bool(kernel.SetConsoleMode(entrada, (modo.value | 0x0080) & ~0x0040))
+    except (OSError, AttributeError):
+        return False
+
+
 def _ler_captura(conteudo, extensao, motor):
     from main import App
     return App.ler_imagem_captura(conteudo, extensao, motor)

@@ -63,3 +63,32 @@ class IsolamentoOCRTests(unittest.TestCase):
         thread.join(timeout=3)
         self.assertFalse(thread.is_alive())
         self.assertFalse(processo.is_alive())
+
+
+class ConsoleWindowsTests(unittest.TestCase):
+    def test_desativa_apenas_selecao_rapida_do_console(self):
+        import ctypes
+        from unittest.mock import Mock, patch
+        import ocr_runtime
+        kernel = Mock()
+        kernel.GetStdHandle.return_value = 100
+        def obter_modo(handle, ponteiro):
+            ponteiro._obj.value = 0x0040 | 0x0007
+            return 1
+        kernel.GetConsoleMode.side_effect = obter_modo
+        kernel.SetConsoleMode.return_value = 1
+        with patch.object(ocr_runtime.os, 'name', 'nt'), \
+                patch.object(ctypes, 'WinDLL', create=True, return_value=kernel):
+            self.assertTrue(ocr_runtime.preparar_console_windows())
+        kernel.SetConsoleMode.assert_called_once_with(100, 0x0080 | 0x0007)
+
+    def test_execucao_sem_console_nao_impede_o_programa(self):
+        import ctypes
+        from unittest.mock import Mock, patch
+        import ocr_runtime
+        kernel = Mock()
+        kernel.GetConsoleMode.return_value = 0
+        with patch.object(ocr_runtime.os, 'name', 'nt'), \
+                patch.object(ctypes, 'WinDLL', create=True, return_value=kernel):
+            self.assertFalse(ocr_runtime.preparar_console_windows())
+        kernel.SetConsoleMode.assert_not_called()

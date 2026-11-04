@@ -111,5 +111,7 @@ def preparar_modelos():
 
 
 if __name__ == "__main__":
+    from ocr_runtime import preparar_console_windows
+    preparar_console_windows()
     preparar_modelos()
     print("Modelos do PaddleOCR preparados para processamento local.")

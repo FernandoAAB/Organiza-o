@@ -4,9 +4,11 @@ import unittest
 import threading
 import urllib.request
 import uuid
+import socket
+import http.client
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import main
 
@@ -243,3 +245,86 @@ class ComparacaoTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UploadInterrompidoTests(unittest.TestCase):
+    def criar(self, corpo=None):
+        corpo = corpo or (b'--teste\r\nContent-Disposition: form-data; name="documento"; '
+                          b'filename="foto.png"\r\n\r\nimagem\r\n--teste--\r\n')
+        handler = object.__new__(main._UploadHandler)
+        handler.headers = {"Content-Length": str(len(corpo)),
+                           "Content-Type": "multipart/form-data; boundary=teste"}
+        handler.rfile = Mock()
+        handler.rfile.read.return_value = corpo
+        handler.wfile = Mock()
+        handler.server = Mock(spec=['captura_callback'])
+        handler.send_response = Mock()
+        handler.send_header = Mock()
+        handler.end_headers = Mock()
+        handler.send_error = Mock()
+        return handler
+
+    def executar(self, handler, metodo='do_POST'):
+        with patch.object(main.BaseHTTPRequestHandler, 'handle', side_effect=getattr(handler, metodo)):
+            handler.handle()
+
+    def test_reset_durante_upload_nao_escapa_nem_adiciona_foto(self):
+        handler = self.criar()
+        handler.rfile.read.side_effect = ConnectionResetError(10054, 'conexao interrompida')
+        self.executar(handler)
+        handler.server.captura_callback.assert_not_called()
+
+    def test_corpo_truncado_nao_e_aceito_como_foto_completa(self):
+        handler = self.criar()
+        handler.headers['Content-Length'] = str(int(handler.headers['Content-Length']) + 20)
+        self.executar(handler)
+        handler.send_error.assert_called_once()
+        self.assertEqual(handler.send_error.call_args.args[0], 400)
+        handler.server.captura_callback.assert_not_called()
+
+    def test_multipart_sem_fechamento_nao_entra_na_fila(self):
+        handler = self.criar(b'--teste\r\nContent-Disposition: form-data; name="documento"; '
+                             b'filename="foto.png"\r\n\r\nimagem')
+        self.executar(handler)
+        handler.send_error.assert_called_once()
+        handler.server.captura_callback.assert_not_called()
+
+    def test_queda_apos_gravacao_nao_repete_nem_remove_foto(self):
+        handler = self.criar()
+        handler.wfile.write.side_effect = BrokenPipeError('cliente saiu')
+        self.executar(handler)
+        handler.server.captura_callback.assert_called_once_with(b'imagem', '.png')
+
+    def test_falha_interna_continua_visivel(self):
+        handler = self.criar()
+        handler.rfile.read.side_effect = RuntimeError('erro interno')
+        with self.assertRaisesRegex(RuntimeError, 'erro interno'):
+            self.executar(handler)
+
+    def test_servidor_recebe_nova_foto_apos_envio_interrompido(self):
+        fotos = []
+        servidor = main._CaptureHTTPServer(("127.0.0.1", 0), main._UploadHandler)
+        servidor.captura_callback = lambda dados, extensao: fotos.append((dados, extensao))
+        thread = threading.Thread(target=servidor.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(servidor.server_close)
+        self.addCleanup(servidor.shutdown)
+        with patch.object(servidor, 'handle_error') as erro_servidor:
+            with socket.create_connection(servidor.server_address, timeout=3) as conexao:
+                conexao.sendall(b'POST / HTTP/1.0\r\nContent-Length: 1000\r\n'
+                               b'Content-Type: multipart/form-data; boundary=teste\r\n\r\nparcial')
+                conexao.shutdown(socket.SHUT_WR)
+                self.assertIn(b'400', conexao.recv(4096))
+            cliente = http.client.HTTPConnection(*servidor.server_address, timeout=3)
+            try:
+                corpo = (b'--teste\r\nContent-Disposition: form-data; name="documento"; '
+                         b'filename="foto.png"\r\n\r\nimagem\r\n--teste--\r\n')
+                cliente.request('POST', '/', body=corpo,
+                                headers={'Content-Type': 'multipart/form-data; boundary=teste'})
+                resposta = cliente.getresponse()
+                self.assertEqual(resposta.status, 200)
+                resposta.read()
+            finally:
+                cliente.close()
+            self.assertEqual(fotos, [(b'imagem', '.png')])
+            erro_servidor.assert_not_called()
