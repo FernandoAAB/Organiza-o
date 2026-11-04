@@ -1039,23 +1039,40 @@ def gerar_relatorio_html(tipo=None, termo="", abrir=True):
 <html lang="pt-BR"><head><meta charset="UTF-8">
 <title>Comparação de {categoria} - A1 x A2</title>
 <style>
-body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
-h2, p {{ text-align: center; }}
-table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-th, td {{ border: 1px solid #ccc; padding: 10px 12px; font-size: 14px; line-height: 1.5; }}
-td:nth-child(3) {{ white-space: pre-wrap; overflow-wrap: anywhere; }}
-th {{ background-color: #f4f4f4; }}
+@page {{ size: A4 portrait; margin: 8mm; }}
+body {{ font-family: Arial, sans-serif; margin: 12px auto; padding: 0 12px; max-width: 1100px; color: #222; }}
+h2 {{ font-size: 18px; line-height: 1.2; margin: 0 0 6px; }}
+.metadados {{ display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px;
+  margin-bottom: 8px; font-size: 11px; }}
+table {{ width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0; }}
+col.numero {{ width: 10mm; }}
+col.referencia {{ width: 14mm; }}
+col.situacao {{ width: 27mm; }}
+th, td {{ border: 1px solid #bbb; padding: 3px 5px; font-size: 12px; line-height: 1.2; vertical-align: top; }}
+th {{ background-color: #f1f1f1; }}
+td:nth-child(1), td:nth-child(2), td:nth-child(4) {{ text-align: center; white-space: nowrap; }}
+td:nth-child(3) {{ white-space: normal; overflow-wrap: anywhere; }}
+thead {{ display: table-header-group; }}
+tr {{ break-inside: avoid; page-break-inside: avoid; }}
+.resumo {{ margin: 6px 0 0; font-size: 11px; }}
 .ok {{ color: green; font-weight: bold; }}
 .falta {{ color: red; font-weight: bold; }}
-@media print {{ .nao-imprimir {{ display: none; }} }}
+@media print {{
+  body {{ margin: 0; padding: 0; max-width: none; }}
+  h2 {{ font-size: 11pt; margin: 0 0 2mm; }}
+  .metadados {{ font-size: 8pt; margin-bottom: 2mm; }}
+  th, td {{ font-size: 9pt; line-height: 1.15; padding: 1mm 1.2mm; }}
+  .resumo {{ font-size: 8pt; }}
+  .nao-imprimir {{ display: none; }}
+}}
 </style></head><body>
 <h2>Relatório de Comparação de {categoria}: A1 x A2</h2>
-<p>Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
-<p>Pesquisa: {escape(termo.strip()) or 'Todos os registros'}</p>
-<table><thead><tr>
+<div class="metadados"><span>Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</span>
+<span>Pesquisa: {escape(termo.strip()) or 'Todos os registros'}</span></div>
+<table><colgroup><col class="numero"><col class="referencia"><col><col class="situacao"></colgroup><thead><tr>
 <th>Nº</th><th>Linha A1</th><th>Registro</th><th>Situação</th>
 </tr></thead><tbody>{linhas}</tbody></table>
-<p><b>Lançamentos no A1:</b> {total} | <b>Faltando no A2:</b> {faltando}</p>
+<p class="resumo"><b>Lançamentos no A1:</b> {total} | <b>Faltando no A2:</b> {faltando}</p>
 <div class="nao-imprimir" style="text-align:center;margin-top:30px;">
 <button onclick="window.print();" style="padding:10px 20px;font-size:16px;cursor:pointer;background:#007BFF;color:#fff;border:none;border-radius:5px;">Imprimir Relatório</button>
 </div></body></html>"""

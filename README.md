@@ -309,7 +309,10 @@ compilação, ou você pode executar o código atualizado como descrito acima.
    apenas nesse painel, e os contadores mostram as quantidades visíveis. **Relatório**
    abre `No/relatorio_debitos.html` no navegador, com a mesma pesquisa e tipo.
    O nome do arquivo foi mantido para compatibilidade; ele agora inclui créditos também.
-   Na página aberta, use **Imprimir Relatório** ou Ctrl+P. No Windows, o arquivo
+   Na página aberta, use **Imprimir Relatório** ou Ctrl+P. O relatório usa A4
+   com margens de 8 mm, cabeçalho compacto e colunas numéricas estreitas, deixando
+   mais espaço para o registro. Os espaços repetidos do extrato são compactados
+   apenas na exibição, e o cabeçalho da tabela se repete nas páginas impressas. No Windows, o arquivo
    é aberto pelo caminho nativo, aceitando pastas com espaços e acentos. Se a
    abertura automática falhar, o programa avisa e mostra o caminho do HTML salvo
    para você abri-lo manualmente em um navegador.
