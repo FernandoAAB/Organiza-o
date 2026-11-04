@@ -1,5 +1,6 @@
 """Contratos de persistência, ordem, concorrência e recuperação da fila."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -22,7 +23,7 @@ class FilaOCRTests(unittest.TestCase):
         self.assertEqual(foto['id'], id_foto)
         self.assertEqual(self.fila.caminho(foto).read_bytes(), b'foto de teste')
         self.fila.resultado(id_foto, 'texto', 'revisar', {'valor': '123.45'})
-        with sqlite3.connect(self.fila.banco) as db:
+        with closing(sqlite3.connect(self.fila.banco)) as db:
             dados = db.execute('SELECT imagem, campos, estado FROM fotos').fetchone()
         self.assertEqual(dados[0], foto['imagem'])
         self.assertIn('123.45', dados[1])
@@ -82,7 +83,7 @@ class FilaOCRTests(unittest.TestCase):
         self.fila.resultado(identificador, 'recibo', '', {'valor': '1.00'})
         self.fila.finalizar(identificador, 'concluida')
         self.assertEqual(list(self.fila.imagens.iterdir()), [])
-        with sqlite3.connect(self.fila.banco) as db:
+        with closing(sqlite3.connect(self.fila.banco)) as db:
             foto = db.execute('SELECT estado, texto, campos, imagem FROM fotos').fetchone()
         self.assertEqual(foto[0:2], ('concluida', 'recibo'))
         self.assertIn('1.00', foto[2])
