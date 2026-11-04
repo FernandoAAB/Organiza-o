@@ -127,12 +127,18 @@ class FilaOCR:
     def limpar_concluidas(self):
         with self._conectar() as db:
             fotos = db.execute("SELECT id, imagem FROM fotos WHERE estado IN ('concluida','descartada') AND imagem IS NOT NULL").fetchall()
-            for foto in fotos:
-                try:
-                    (self.imagens / foto['imagem']).unlink(missing_ok=True)
-                except OSError:
-                    continue  # Tenta novamente ao reabrir; o trabalho já terminou.
-                db.execute("UPDATE fotos SET imagem=NULL WHERE id=?", (foto['id'],))
+        removidas = []
+        # A exclusão no disco pode ser lenta (antivírus, HD, sincronização).
+        # Faça-a antes de abrir a transação de escrita no SQLite.
+        for foto in fotos:
+            try:
+                (self.imagens / foto['imagem']).unlink(missing_ok=True)
+            except OSError:
+                continue
+            removidas.append((foto['id'],))
+        if removidas:
+            with self._conectar() as db:
+                db.executemany("UPDATE fotos SET imagem=NULL WHERE id=? AND estado IN ('concluida','descartada')", removidas)
 
     def quantidade(self, estado=None):
         with self._conectar(timeout=0.05) as db:

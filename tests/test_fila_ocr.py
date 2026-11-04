@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 import sqlite3
+import threading
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -94,3 +95,35 @@ class FilaOCRTests(unittest.TestCase):
             self.fila.adicionar_lote([(b'primeira', '.png'), (b'segunda', '.exe')])
         self.assertEqual(self.fila.quantidade(), 0)
         self.assertEqual(list(self.fila.imagens.iterdir()), [])
+
+    def test_limpeza_lenta_nao_bloqueia_gravacao_de_novos_envios(self):
+        ids = self.fila.adicionar_lote([(b'primeira', '.png'), (b'segunda', '.png')])
+        with self.fila._conectar() as db:
+            db.execute("UPDATE fotos SET estado='concluida'")
+            fotos = db.execute('SELECT imagem FROM fotos ORDER BY id').fetchall()
+        segundo = self.fila.imagens / fotos[1]['imagem']
+        entrou, liberar, gravou = threading.Event(), threading.Event(), threading.Event()
+        unlink_original = Path.unlink
+        def remover(caminho, *args, **kwargs):
+            if caminho == segundo:
+                entrou.set()
+                liberar.wait(timeout=5)
+            return unlink_original(caminho, *args, **kwargs)
+        def adicionar():
+            self.fila.adicionar(b'nova', '.png')
+            gravou.set()
+        with patch.object(Path, 'unlink', remover):
+            limpeza = threading.Thread(target=self.fila.limpar_concluidas)
+            limpeza.start()
+            try:
+                self.assertTrue(entrou.wait(timeout=2))
+                envio = threading.Thread(target=adicionar)
+                envio.start()
+                livre = gravou.wait(timeout=0.5)
+            finally:
+                liberar.set()
+                limpeza.join(timeout=5)
+                if 'envio' in locals():
+                    envio.join(timeout=5)
+        self.assertTrue(livre, 'A exclusao da imagem segurou a escrita no banco.')
+        self.assertEqual(self.fila.quantidade(), 1)

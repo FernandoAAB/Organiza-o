@@ -457,6 +457,7 @@ def executar_ocr_motor(caminho, motor="Tesseract"):
 
 
 class _CaptureHTTPServer(ThreadingHTTPServer):
+    request_queue_size = 32
     allow_reuse_address = True
     daemon_threads = True
 
@@ -480,6 +481,77 @@ class _UploadHandler(BaseHTTPRequestHandler):
     @staticmethod
     def pagina_upload(mensagem=""):
         aviso = f"<p class='aviso'>{escape(mensagem)}</p>" if mensagem else ""
+        script = """
+        const filaEnvios = [];
+        let enviando = false;
+        let confirmados = 0;
+        const mensagem = document.getElementById('situacao-envio');
+        const progresso = document.getElementById('progresso-envio');
+        const lista = document.getElementById('lista-envios');
+        function atualizarEnvios() {
+          mensagem.textContent = `${confirmados} foto(s) recebida(s) no computador; ${filaEnvios.length} aguardando envio ou confirmação.`;
+        }
+        function enfileirarFotos(entrada) {
+          for (const arquivo of Array.from(entrada.files || [])) {
+            const linha = document.createElement('li');
+            lista.appendChild(linha);
+            if (arquivo.size === 0 || arquivo.size > 15 * 1024 * 1024) {
+              linha.textContent = arquivo.name + ': arquivo vazio ou maior que 15 MB.';
+              continue;
+            }
+            linha.textContent = arquivo.name + ': aguardando envio.';
+            filaEnvios.push({arquivo, linha});
+          }
+          entrada.value = '';
+          atualizarEnvios();
+          enviarProximo();
+        }
+        function enviarProximo() {
+          if (enviando || filaEnvios.length === 0) return;
+          enviando = true;
+          progresso.value = 0;
+          const tarefa = filaEnvios[0];
+          const xhr = new XMLHttpRequest();
+          let concluida = false;
+          const terminar = (recebida, aviso) => {
+            if (concluida) return;
+            concluida = true;
+            if (recebida) { confirmados++; progresso.value = 100; }
+            tarefa.linha.textContent = tarefa.arquivo.name + ': ' + aviso;
+            filaEnvios.shift();
+            enviando = false;
+            atualizarEnvios();
+            enviarProximo();
+          };
+          xhr.open('POST', window.location.pathname || '/');
+          xhr.timeout = 300000;
+          xhr.upload.onprogress = (evento) => {
+            if (!evento.lengthComputable) return;
+            const percentual = Math.round(100 * evento.loaded / evento.total);
+            progresso.value = percentual;
+            tarefa.linha.textContent = tarefa.arquivo.name + (percentual < 100
+              ? ': enviando ' + percentual + '%.' : ': aguardando confirmação do computador.');
+          };
+          xhr.onload = () => {
+            if (xhr.status === 200) {
+              terminar(true, 'recebida e salva na fila do computador.');
+            } else if (xhr.status === 503) {
+              terminar(false, 'o computador não conseguiu salvar. Confira o armazenamento e envie novamente.');
+            } else {
+              terminar(false, 'envio recusado (' + xhr.status + '). Confira o arquivo e envie novamente.');
+            }
+          };
+          const semConfirmacao = () => terminar(false,
+            'sem confirmação. Confira a fila no computador antes de reenviar.');
+          xhr.onerror = semConfirmacao;
+          xhr.ontimeout = semConfirmacao;
+          xhr.onabort = semConfirmacao;
+          const dados = new FormData();
+          dados.append('documento', tarefa.arquivo, tarefa.arquivo.name);
+          tarefa.linha.textContent = tarefa.arquivo.name + ': enviando...';
+          try { xhr.send(dados); } catch (erro) { semConfirmacao(); }
+        }
+        """
         return f"""<!doctype html>
 <html lang="pt-BR"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -528,10 +600,15 @@ continua pronta para adicionar mais arquivos.</p>
 {aviso}
 <form method="post" enctype="multipart/form-data">
 <input type="file" name="documento" accept="image/*" capture="environment"
- multiple required onchange="this.form.submit()">
+ multiple required onchange="enfileirarFotos(this)">
 <p class="ajuda">Depois de tirar ou escolher a foto, o envio começa
-automaticamente.</p>
+automaticamente. Você pode selecionar mais fotos enquanto o envio está em andamento.
+Mantenha esta página aberta até a confirmação.</p>
 </form>
+<p id="situacao-envio" role="status" aria-live="polite">Pronto para receber fotos.</p>
+<progress id="progresso-envio" max="100" value="0" aria-label="Progresso do envio" style="width:100%"></progress>
+<ul id="lista-envios" style="overflow-wrap:anywhere"></ul>
+<script>{script}</script>
 </main></body></html>"""
 
     def do_GET(self):
@@ -548,7 +625,7 @@ automaticamente.</p>
         except ValueError:
             self.send_error(400, "Tamanho de arquivo inválido")
             return
-        if tamanho <= 0 or tamanho > 15 * 1024 * 1024:
+        if tamanho <= 0 or tamanho > 16 * 1024 * 1024:
             self.send_error(413, "Arquivo vazio ou maior que 15 MB")
             return
         corpo = self.rfile.read(tamanho)
@@ -578,6 +655,9 @@ automaticamente.</p>
             extensao = Path(nome.group(1).decode("utf-8", "ignore")).suffix.lower()
             if extensao not in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"):
                 self.send_error(415, "Formato de imagem não aceito")
+                return
+            if not conteudo or len(conteudo) > 15 * 1024 * 1024:
+                self.send_error(413, "Arquivo vazio ou maior que 15 MB")
                 return
             arquivos.append((conteudo, extensao))
         if not arquivos:

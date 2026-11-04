@@ -118,8 +118,12 @@ com um aviso na tela e não fica presa aguardando revisão. Duplicidades e
 documentos sem correspondência permanecem para revisão. A linha incluída recebe
 uma cor própria na conferência **A1 × A2** durante a sessão.
 Ao escolher uma foto no celular, o envio começa automaticamente; não é
-necessário clicar em outro botão. O formulário aceita várias fotos na mesma
-remessa e mantém uma fila de revisão. Todos os motores leem em um processo separado da interface, uma foto por vez;
+necessário clicar em outro botão. Você pode selecionar várias fotos: a página
+as envia uma por vez, mostra o progresso e permite selecionar outras enquanto
+um envio está em andamento, sem recarregar a página nem cancelar o anterior.
+Mantenha a página aberta até cada foto aparecer como recebida no computador.
+Se houver falha sem confirmação, confira a fila no computador antes de reenviar.
+O computador mantém uma fila de revisão. Todos os motores leem em um processo separado da interface, uma foto por vez;
 novos envios entram na fila. O processo é reutilizado para manter os modelos
 carregados, usa até duas threads nas bibliotecas numéricas e tem limite de
 180 segundos por leitura. Se encerrar ou exceder o prazo, a leitura falha

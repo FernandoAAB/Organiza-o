@@ -26,7 +26,8 @@ class LancamentosComSinalTests(unittest.TestCase):
                 endereco = f"http://127.0.0.1:{servidor.server_port}"
                 pagina = urllib.request.urlopen(endereco).read().decode()
                 self.assertIn('multiple', pagina)
-                self.assertIn('onchange="this.form.submit()"', pagina)
+                self.assertIn('onchange="enfileirarFotos(this)"', pagina)
+                self.assertNotIn('this.form.submit()', pagina)
                 self.assertNotIn(">Enviar fotos para o computador<", pagina)
                 limite = f"----teste{uuid.uuid4().hex}".encode()
                 corpo = (
@@ -328,3 +329,18 @@ class UploadInterrompidoTests(unittest.TestCase):
                 cliente.close()
             self.assertEqual(fotos, [(b'imagem', '.png')])
             erro_servidor.assert_not_called()
+
+    def test_limite_de_15mb_por_foto_considera_cabecalho_multipart(self):
+        for acrescimo in (0, 1):
+            with self.subTest(acrescimo=acrescimo):
+                conteudo = b'X' * (15 * 1024 * 1024 + acrescimo)
+                corpo = (b'--teste\r\nContent-Disposition: form-data; name="documento"; '
+                         b'filename="foto.png"\r\n\r\n' + conteudo + b'\r\n--teste--\r\n')
+                handler = self.criar(corpo)
+                self.executar(handler)
+                if acrescimo:
+                    self.assertEqual(handler.send_error.call_args.args[0], 413)
+                    handler.server.captura_callback.assert_not_called()
+                else:
+                    handler.send_error.assert_not_called()
+                    handler.server.captura_callback.assert_called_once_with(conteudo, '.png')
