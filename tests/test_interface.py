@@ -609,12 +609,18 @@ class InterfaceTests(unittest.TestCase):
                                  f"xview={tree.xview()}, yview={tree.yview()}")
 
         # A largura inicial depende do monitor, da fonte e do DPI do Windows.
-        # Dois textos curtos e o painel ampliado garantem conteúdo que cabe.
+        # Reserve espaço também para o menu lateral e o mínimo do painel direito.
+        # Em 984 px, o maior painel esquerdo tem 432 px para colunas de 434 px.
+        self.app.geometry("1360x768")
+        self.app.update()
         Path("a1.txt").write_text("A\nB\n", encoding="utf-8")
         self.app.buscar_a1()
         self.app.update()
         self.app.divisao.sash_place(0, self.app.divisao.winfo_width(), 0)
         self.app.update()
+        minimo_colunas = sum(int(tree.column(coluna, "minwidth"))
+                             for coluna in tree["columns"])
+        self.assertGreater(tree.winfo_width(), minimo_colunas + 2)
         conferir(horizontal=False, vertical=False)
 
         # Mesmo com apenas duas linhas, estreitar o painel exige rolagem horizontal.
