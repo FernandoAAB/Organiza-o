@@ -290,6 +290,14 @@ compilação, ou você pode executar o código atualizado como descrito acima.
 
 ## Uso e comparação
 
+O menu lateral mostra apenas ícones para deixar mais espaço às tabelas. Passe o
+mouse sobre ele para ver **Buscar e comparar**, **Lista A2**, **Captura** e
+**Aparência**; ao sair, o menu recolhe após uma breve pausa. A expansão se sobrepõe
+à área de trabalho, sem deslocar as tabelas. Os botões também recebem foco com Tab.
+**Aparência** abre os seletores de tema e cor ao lado do menu e permanece aberta
+até você clicar novamente no botão. Na busca, **Relatório** fica na mesma linha
+de **Buscar** e **Limpar**. Os quatro indicadores conservam seus ícones e cores.
+
 1. Preencha `a1.txt` com um registro por linha. Linhas vazias são ignoradas,
    preservando a numeração original. Use UTF‑8; arquivos UTF‑8 com BOM também são aceitos.
 2. Em **Buscar e comparar**, digite texto, data ou valor e pressione Enter ou

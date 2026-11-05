@@ -1143,6 +1143,10 @@ def icone(nome, cor="cabecalho", tamanho=18):
         elif nome == "busca":
             d.ellipse((13, 10, 65, 62), outline=tinta, width=linha)
             d.line((59, 57, 84, 82), fill=tinta, width=linha)
+        elif nome == "captura":
+            d.line((48, 10, 48, 64), fill=tinta, width=linha)
+            d.line([(26, 44), (48, 66), (70, 44)], fill=tinta, width=linha)
+            d.line([(16, 70), (16, 84), (80, 84), (80, 70)], fill=tinta, width=linha)
         elif nome == "adicionar":
             d.ellipse((9, 9, 87, 87), outline=tinta, width=linha)
             d.line((48, 28, 48, 68), fill=tinta, width=linha)
@@ -1241,8 +1245,6 @@ class App(ctk.CTk):
         self.minsize(960, 560)
         self.configure(fg_color=c("bg"))
 
-        self._montar_cabecalho()
-
         self.status = tk.StringVar(value="Pronto.")
         self.rodape_global = ctk.CTkFrame(self, height=24, corner_radius=0,
                                                        fg_color=c("superficie"), border_width=1, border_color=c("borda"))
@@ -1264,8 +1266,9 @@ class App(ctk.CTk):
             "Status", self.status.get(), parent=self))
         self.status.trace_add("write", self.ajustar_status)
 
-        self.abas = AbasCompactas(self, self.aba_selecionada)
-        self.abas.pack(fill="both", expand=True, padx=12)
+        self._montar_cabecalho()
+        self.abas = AbasCompactas(self.corpo, self.aba_selecionada)
+        self.abas.pack(fill="both", expand=True, padx=(76, 12), pady=(10, 0))
         self.aba_busca = self.abas.add("Buscar e comparar")
         self.aba_a2 = self.abas.add("Lista A2")
         self.aba_captura = self.abas.add("Capturar documento")
@@ -1379,82 +1382,114 @@ class App(ctk.CTk):
                        for iid in tree.get_children()), default=140)
         tree.column("texto", width=max(140, largura), minwidth=max(140, largura))
 
-    #  cabeçalho com seletor de tema 
     def _montar_cabecalho(self):
-        cab = self.cabecalho = ctk.CTkFrame(self, fg_color="transparent", height=46)
-        cab.pack(fill="x", padx=10, pady=(2, 2))
-        cab.grid_columnconfigure(2, weight=1)
-        self.titulo_cabecalho = ctk.CTkLabel(
-            cab, text="Busca e Ordenação", text_color=c("texto"),
-            font=(FONTE, 22, "bold"), height=42)
-        self.titulo_cabecalho.grid(row=0, column=0, padx=(0, 14))
+        # O menu se sobrepõe ao conteúdo ao abrir; as tabelas não mudam de lugar.
+        self.corpo = ctk.CTkFrame(self, fg_color="transparent")
+        self.corpo.pack(fill="both", expand=True)
         self.aba_selecionada = tk.StringVar(value="Buscar e comparar")
-        self.navegacao = ctk.CTkSegmentedButton(
-            cab, values=["Buscar e comparar", "Lista A2", "Captura"], variable=self.aba_selecionada,
-            command=self.trocar_aba, height=32, font=(FONTE, 14, "bold"),
-            fg_color=c("campo"), unselected_color=c("campo"),
-            unselected_hover_color=c("campo_hover"), text_color=("#111827", "#ffffff"))
-        self.navegacao.grid(row=0, column=1)
-        self.botao_aparencia = self.botao(
-            cab, "Aparência", self.alternar_aparencia, largura=104, altura=30)
-        self.botao_aparencia.grid(row=0, column=4, padx=(8, 0))
-        self.painel_aparencia = ctk.CTkFrame(cab, fg_color="transparent")
-
-        self.opt_acento = ctk.CTkOptionMenu(
-            self.painel_aparencia, values=list(ACENTOS), command=self.mudar_acento, width=112, height=30,
-            corner_radius=10, font=(FONTE, 12), dropdown_font=(FONTE, 12),
-            fg_color=c("campo"), button_color=c("campo_hover"),
-            button_hover_color=c("campo_hover"), text_color=c("texto"),
-            dropdown_fg_color=c("painel"), dropdown_text_color=c("texto"),
-            dropdown_hover_color=c("campo"))
-        self.opt_acento.set(self.acento)
-        self.opt_acento.pack(side="right")
-        ctk.CTkLabel(self.painel_aparencia, text="Cor:", text_color=c("cinza"),
-                     font=(FONTE, 13)).pack(side="right", padx=(8, 4))
-
+        self.menu_expandido = False
+        self._recolher_menu_id = None
+        self.cabecalho = ctk.CTkFrame(self.corpo, width=64, corner_radius=0,
+                                    fg_color=c("superficie"), border_width=1, border_color=c("borda"))
+        self.cabecalho.place(x=0, y=0, relheight=1)
+        self.titulo_cabecalho = ctk.CTkLabel(
+            self.cabecalho, text="", image=icone("arquivo", tamanho=26), compound="left",
+            anchor="w", font=(FONTE, 17, "bold"), height=54)
+        self.titulo_cabecalho.pack(fill="x", padx=18, pady=(8, 14))
+        self.botoes_menu = {}
+        for nome, simbolo in (("Buscar e comparar", "busca"), ("Lista A2", "arquivo"), ("Captura", "captura")):
+            botao = ctk.CTkButton(
+                self.cabecalho, text="", image=icone(simbolo, tamanho=22), anchor="w",
+                width=44, height=42, corner_radius=5, border_spacing=10,
+                font=(FONTE, 13, "bold"), text_color=c("texto"),
+                fg_color="transparent", hover_color=c("campo_hover"),
+                command=lambda aba=nome: self.trocar_aba(aba))
+            botao.pack(fill="x", padx=8, pady=4)
+            self.botoes_menu[nome] = botao
+        self.botao_aparencia = ctk.CTkButton(
+            self.cabecalho, text="", image=icone("aparencia", tamanho=22), anchor="w",
+            width=44, height=42, border_spacing=10, fg_color="transparent",
+            hover_color=c("campo_hover"), text_color=c("texto"),
+            font=(FONTE, 13, "bold"), command=self.alternar_aparencia)
+        self.botao_aparencia.pack(side="bottom", fill="x", padx=8, pady=12)
+        self.painel_aparencia = ctk.CTkFrame(self.corpo, width=240, height=126,
+                                           fg_color=c("painel"), border_width=1, border_color=c("borda"))
+        ctk.CTkLabel(self.painel_aparencia, text="Tema:", font=(FONTE, 12)).grid(row=0, column=0, padx=12, pady=12)
         self.seg_tema = ctk.CTkSegmentedButton(
-            self.painel_aparencia, values=["Escuro", "Claro"], command=self.mudar_tema, height=30,
-            corner_radius=6, font=(FONTE, 13, "bold"), fg_color=c("campo"),
+            self.painel_aparencia, values=["Escuro", "Claro"], command=self.mudar_tema,
+            height=30, font=(FONTE, 12, "bold"), fg_color=c("campo"),
             unselected_color=c("campo"), unselected_hover_color=c("campo_hover"),
             text_color=("#111827", "#ffffff"))
         self.seg_tema.set(self.modo)
-        self.seg_tema.pack(side="right")
-        ctk.CTkLabel(self.painel_aparencia, text="Tema:", text_color=c("cinza"),
-                     font=(FONTE, 13)).pack(side="right", padx=(8, 4))
-        self.painel_aparencia.grid(row=0, column=3)
-        cab.bind("<Configure>", self._ajustar_cabecalho)
+        self.seg_tema.grid(row=0, column=1, padx=(0, 12), pady=12)
+        ctk.CTkLabel(self.painel_aparencia, text="Cor:", font=(FONTE, 12)).grid(row=1, column=0, padx=12, pady=(0, 12))
+        self.opt_acento = ctk.CTkOptionMenu(
+            self.painel_aparencia, values=list(ACENTOS), command=self.mudar_acento,
+            width=146, height=30, font=(FONTE, 12), dropdown_font=(FONTE, 12),
+            fg_color=c("campo"), button_color=c("campo_hover"), text_color=c("texto"),
+            dropdown_fg_color=c("painel"), dropdown_text_color=c("texto"))
+        self.opt_acento.set(self.acento)
+        self.opt_acento.grid(row=1, column=1, padx=(0, 12), pady=(0, 12))
+        self.bind("<Motion>", self._acompanhar_menu, add="+")
+        self.bind("<Leave>", self._acompanhar_menu, add="+")
+        self.bind("<FocusIn>", self._foco_menu, add="+")
 
-    def _ajustar_cabecalho(self, evento=None):
-        if not self.painel_aparencia.winfo_manager():
+    def _foco_menu(self, evento):
+        if str(evento.widget).startswith(str(self.cabecalho) + "."):
+            self.expandir_menu()
+
+    def expandir_menu(self):
+        if self._recolher_menu_id is not None:
+            self.after_cancel(self._recolher_menu_id)
+            self._recolher_menu_id = None
+        self._definir_menu(True)
+
+    def _definir_menu(self, expandido):
+        if self.menu_expandido == expandido:
             return
-        # As fontes variam entre sistemas. Use a largura real solicitada pelos
-        # controles para decidir se os seletores precisam de uma segunda linha.
-        largura = sum(widget.winfo_reqwidth() for widget in (
-            self.titulo_cabecalho, self.navegacao,
-            self.painel_aparencia, self.botao_aparencia))
-        largura += round(self.cabecalho._apply_widget_scaling(22))  # margens da grade
-        compacta = self.cabecalho.winfo_width() < largura
-        linha = 1 if compacta else 0
-        if int(self.painel_aparencia.grid_info()["row"]) != linha:
-            self.painel_aparencia.grid(
-                row=linha, column=0 if compacta else 3,
-                columnspan=5 if compacta else 1,
-                sticky="e" if compacta else "", pady=(0, 4) if compacta else 0)
+        self.menu_expandido = expandido
+        self.cabecalho.configure(width=236 if expandido else 64)
+        self.titulo_cabecalho.configure(text="  Busca e Ordenação" if expandido else "")
+        for nome, botao in self.botoes_menu.items():
+            botao.configure(text="  " + nome if expandido else "")
+        self.botao_aparencia.configure(text="  Aparência" if expandido else "")
+        self.cabecalho.lift()
+
+    def _acompanhar_menu(self, evento=None):
+        x, y = self.winfo_pointerxy()
+        dentro = (self.cabecalho.winfo_rootx() <= x < self.cabecalho.winfo_rootx() + self.cabecalho.winfo_width()
+                  and self.cabecalho.winfo_rooty() <= y < self.cabecalho.winfo_rooty() + self.cabecalho.winfo_height())
+        if dentro:
+            self.expandir_menu()
+        elif self.menu_expandido and self._recolher_menu_id is None:
+            self._recolher_menu_id = self.after(250, self.recolher_menu)
+
+    def recolher_menu(self):
+        self._recolher_menu_id = None
+        if not self.painel_aparencia.winfo_manager():
+            self._definir_menu(False)
+
+    def _atualizar_menu(self):
+        normal, hover = ACENTOS[self.acento]
+        for nome, botao in self.botoes_menu.items():
+            ativo = nome == self.aba_selecionada.get()
+            botao.configure(fg_color=normal if ativo else "transparent",
+                            hover_color=hover if ativo else c("campo_hover"))
 
     def trocar_aba(self, nome):
-        visual = nome
-        if nome == "Captura":
-            nome = "Capturar documento"
-        self.abas.set(nome)
-        self.aba_selecionada.set(visual)
+        self.abas.set("Capturar documento" if nome == "Captura" else nome)
+        self.aba_selecionada.set(nome)
+        self._atualizar_menu()
         self.atualizar_tudo()
 
     def alternar_aparencia(self):
         if self.painel_aparencia.winfo_manager():
-            self.painel_aparencia.grid_remove()
+            self.painel_aparencia.place_forget()
+            self._acompanhar_menu()
         else:
-            self.painel_aparencia.grid()
-            self._ajustar_cabecalho()
+            self.expandir_menu()
+            self.painel_aparencia.place(x=242, rely=1, y=-12, anchor="sw")
+            self.painel_aparencia.lift()
 
     def iniciar_servidor_captura(self):
         if (self.servidor_captura is not None
@@ -1824,7 +1859,7 @@ class App(ctk.CTk):
             b.configure(fg_color=normal, hover_color=hover)
         if self.botao_adicionar.cget("state") == "disabled":
             self.botao_adicionar.configure(fg_color=c("campo"), text_color_disabled=c("cinza"))
-        self.navegacao.configure(selected_color=normal, selected_hover_color=hover)
+        self._atualizar_menu()
         self.seg_tema.configure(selected_color=("#1686ff", normal), selected_hover_color=("#0874e8", hover))
         # tabelas (ttk) precisam ser reestilizadas
         estilizar_tabelas(self.modo, normal, self.painel_busca._apply_widget_scaling(1))
@@ -1860,7 +1895,7 @@ class App(ctk.CTk):
         topo.pack(fill="x", pady=(2, 6))
         topo.grid_columnconfigure(0, weight=1)
         pesquisa = ctk.CTkFrame(topo, fg_color="transparent")
-        pesquisa.grid(row=0, column=0, sticky="ew", padx=(0, 20))
+        pesquisa.grid(row=0, column=0, sticky="ew")
         pesquisa.grid_columnconfigure(0, weight=1)
         caixa = ctk.CTkFrame(pesquisa, height=34, fg_color=c("campo"), corner_radius=5,
                               border_width=1, border_color=c("borda"))
@@ -1880,8 +1915,12 @@ class App(ctk.CTk):
         self.busca_var.trace_add("write", self.atualizar_dica_busca)
         self.botao(pesquisa, "Buscar", self.buscar_a1, primario=True, largura=84, altura=32).grid(row=0, column=1, padx=(10, 8))
         self.botao(pesquisa, "Limpar", self.mostrar_todos, largura=84, altura=32).grid(row=0, column=2)
+        self.botao_relatorio = self.botao(pesquisa, "Relatório", self.imprimir_relatorio, largura=108, altura=32)
+        self.botao_relatorio.grid(row=0, column=3, padx=(12, 0))
         indicadores = ctk.CTkFrame(topo, fg_color="transparent")
-        indicadores.grid(row=0, column=1, sticky="e")
+        indicadores.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        for coluna in range(4):
+            indicadores.grid_columnconfigure(coluna, weight=1, uniform="resumo")
         self.indicador_origem = tk.StringVar(value="0")
         self.indicador_ok = tk.StringVar(value="0")
         self.indicador_falta = tk.StringVar(value="0")
@@ -1894,7 +1933,7 @@ class App(ctk.CTk):
                 (self.indicador_atencao, "Atenção", "atencao", "atencao"))):
             cartao = ctk.CTkFrame(indicadores, height=44, width=132, corner_radius=5,
                                    fg_color=c("painel"), border_width=1, border_color=c("borda"))
-            cartao.grid(row=0, column=coluna, padx=(0 if coluna == 0 else 6, 0))
+            cartao.grid(row=0, column=coluna, sticky="ew", padx=(0 if coluna == 0 else 6, 0))
             cartao.grid_propagate(False)
             cartao.grid_columnconfigure(1, weight=1)
             ctk.CTkLabel(cartao, text="", image=icone(simbolo, cor, 24), width=36, height=40).grid(row=0, column=0, rowspan=2, padx=(4, 2))
@@ -2162,8 +2201,6 @@ class App(ctk.CTk):
             [42, 80, 0, 116, 110])
         frame.grid(row=1, column=0, sticky="nsew", padx=8)
         self.tree_deb.configure(style="Treeview", displaycolumns=("ordem", "linha", "situacao", "valor", "texto"))
-        self.botao(rodape, "Relatório", self.imprimir_relatorio,
-                   largura=108, altura=32).pack(side="right")
         self.botao(rodape, "Atualizar", self.atualizar_tudo,
                    largura=108, altura=32).pack(side="right", padx=(0, 10))
         self.tree_deb.bind("<<TreeviewSelect>>", lambda e: self.sincronizar_selecao(self.tree_deb, self.tree_busca))

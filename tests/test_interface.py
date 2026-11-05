@@ -639,36 +639,53 @@ class InterfaceTests(unittest.TestCase):
         self.app.update()
         conferir(horizontal=False, vertical=False)
 
-    def test_cabecalho_acomoda_fontes_largas_ao_redimensionar_e_reabrir_aparencia(self):
-        # Reproduz a diferença de métricas das fontes dos runners Linux.
-        self.app.navegacao.configure(font=(main.FONTE, 20, "bold"))
-        for largura in (960, 1366, 960):
-            with self.subTest(largura=largura):
-                self.app.geometry(f"{largura}x768")
-                self.app.update()
-                for widget in (self.app.navegacao, self.app.botao_aparencia,
-                               self.app.painel_aparencia):
-                    self.assertTrue(widget.winfo_ismapped())
-                    self.assertGreaterEqual(widget.winfo_x(), 0)
-                    self.assertLessEqual(widget.winfo_x() + widget.winfo_width(),
-                                         widget.master.winfo_width())
-                    self.assertLessEqual(widget.winfo_y() + widget.winfo_height(),
-                                         widget.master.winfo_height())
-                self.app.alternar_aparencia()
-                self.app.geometry("1200x768")
-                self.app.update()
-                self.assertFalse(self.app.painel_aparencia.winfo_ismapped())
-                self.app.geometry(f"{largura}x768")
-                self.app.update()
-                self.app.alternar_aparencia()
-                self.app.update()
-                painel = self.app.painel_aparencia
-                self.assertTrue(painel.winfo_ismapped())
-                self.assertLessEqual(painel.winfo_x() + painel.winfo_width(),
-                                     painel.master.winfo_width())
-                self.assertLessEqual(self.app.botao_aparencia.winfo_x() +
-                                     self.app.botao_aparencia.winfo_width(),
-                                     self.app.cabecalho.winfo_width())
+    def test_menu_abre_com_mouse_recolhe_e_preserva_posicao_das_tabelas(self):
+        for largura in (960, 1366):
+            self.app.geometry(f"{largura}x768")
+            self.app.update()
+            self.app.painel_aparencia.place_forget()
+            self.app.recolher_menu()
+            self.app.update()
+            x_tabela = self.app.tree_busca.winfo_rootx()
+            for botao in self.app.botoes_menu.values():
+                self.assertEqual(botao.cget("text"), "")
+            self.app.cabecalho.event_generate("<Motion>", x=30, y=110, warp=True)
+            self.app.update()
+            self.assertTrue(self.app.menu_expandido)
+            self.assertIn("Lista A2", self.app.botoes_menu["Lista A2"].cget("text"))
+            self.assertEqual(self.app.tree_busca.winfo_rootx(), x_tabela)
+            self.app.botoes_menu["Lista A2"].invoke()
+            self.app.update()
+            self.assertTrue(self.app.tree_a2.winfo_ismapped())
+            self.app.botoes_menu["Captura"].invoke()
+            self.app.update()
+            self.assertTrue(self.app.aba_captura.winfo_ismapped())
+            self.app.botoes_menu["Buscar e comparar"].invoke()
+            self.app.update()
+            self.app.tree_deb.event_generate("<Motion>", x=100, y=80, warp=True)
+            self.app.after(400, self.app.quit)
+            self.app.mainloop()
+            self.assertFalse(self.app.menu_expandido)
+            self.assertEqual(self.app.tree_busca.winfo_rootx(), x_tabela)
+            self.assertEqual(self.app.botao_relatorio.winfo_rooty(),
+                             self.app.entrada_busca.winfo_rooty())
+
+    def test_aparencia_permanece_aberta_e_controles_funcionam_no_menu(self):
+        self.app.alternar_aparencia()
+        self.app.update()
+        self.app.recolher_menu()
+        self.assertTrue(self.app.menu_expandido)
+        self.assertTrue(self.app.painel_aparencia.winfo_ismapped())
+        self.app.mudar_tema("Claro")
+        self.app.mudar_acento("Laranja")
+        self.app.update()
+        self.assertEqual(self.app.seg_tema.get(), "Claro")
+        self.assertEqual(self.app.opt_acento.get(), "Laranja")
+        self.app.alternar_aparencia()
+        self.app.recolher_menu()
+        self.app.update()
+        self.assertFalse(self.app.painel_aparencia.winfo_ismapped())
+        self.assertFalse(self.app.menu_expandido)
 
     def test_redimensionamento_mantem_tabelas_alinhadas_e_controles_visiveis(self):
         def conferir(widget):
