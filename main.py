@@ -1918,9 +1918,7 @@ class App(ctk.CTk):
         self.botao_relatorio = self.botao(pesquisa, "Relatório", self.imprimir_relatorio, largura=108, altura=32)
         self.botao_relatorio.grid(row=0, column=3, padx=(12, 0))
         indicadores = ctk.CTkFrame(topo, fg_color="transparent")
-        indicadores.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        for coluna in range(4):
-            indicadores.grid_columnconfigure(coluna, weight=1, uniform="resumo")
+        indicadores.grid(row=1, column=0, sticky="w", pady=(6, 0))
         self.indicador_origem = tk.StringVar(value="0")
         self.indicador_ok = tk.StringVar(value="0")
         self.indicador_falta = tk.StringVar(value="0")
@@ -1931,16 +1929,16 @@ class App(ctk.CTk):
                 (self.indicador_ok, "Conferidos", "confirmado", "verde"),
                 (self.indicador_falta, "Faltando no A2", "alerta", "vermelho"),
                 (self.indicador_atencao, "Atenção", "atencao", "atencao"))):
-            cartao = ctk.CTkFrame(indicadores, height=44, width=132, corner_radius=5,
+            cartao = ctk.CTkFrame(indicadores, height=38, width=0, corner_radius=5,
                                    fg_color=c("painel"), border_width=1, border_color=c("borda"))
             cartao.grid(row=0, column=coluna, sticky="ew", padx=(0 if coluna == 0 else 6, 0))
-            cartao.grid_propagate(False)
-            cartao.grid_columnconfigure(1, weight=1)
-            ctk.CTkLabel(cartao, text="", image=icone(simbolo, cor, 24), width=36, height=40).grid(row=0, column=0, rowspan=2, padx=(4, 2))
+            # Largura segue o texto, sem distribuir espaço vazio entre os ícones.
+            ctk.CTkLabel(cartao, text="", image=icone(simbolo, cor, 20), width=24, height=32).grid(
+                row=0, column=0, rowspan=2, padx=(6, 4), pady=2)
             ctk.CTkLabel(cartao, textvariable=variavel, height=20, anchor="w", text_color=c("texto"),
-                         font=(FONTE, 17, "bold")).grid(row=0, column=1, sticky="ew", pady=(3, 0))
+                         font=(FONTE, 16, "bold")).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(2, 0))
             ctk.CTkLabel(cartao, text=titulo, height=15, anchor="w", text_color=c(cor),
-                         font=(FONTE, 11)).grid(row=1, column=1, sticky="ew", pady=(0, 4))
+                         font=(FONTE, 11)).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 2))
             self.cartoes_resumo.append(cartao)
         self.divisao = tk.PanedWindow(self.aba_busca, orient="horizontal", sashwidth=8,
                                      bd=0, sashrelief="flat", showhandle=False,
