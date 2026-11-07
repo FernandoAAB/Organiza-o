@@ -16,10 +16,9 @@ As preferências são salvas. **Esmeralda** é o destaque inicial; preferências
 salvas continuam válidas. Os ícones são desenhados pelo aplicativo, sem depender
 de símbolos especiais nas fontes do computador.
 
-As capturas desta página usam dados fictícios e mostram a versão anterior ao
-menu lateral. Elas continuam ilustrando os registros e as regras de conferência,
-mas a posição dos controles mudou conforme descrito abaixo. A aparência das
-fontes pode variar conforme o sistema operacional.
+As capturas desta página mostram a versão atual com dados fictícios, sem alterar
+os arquivos de uso. Incluem o menu lateral e a pesquisa na mesma linha dos
+contadores. A aparência das fontes pode variar conforme o sistema operacional.
 
 ### Tela inicial — Buscar e comparar
 
@@ -78,7 +77,7 @@ Clique na mensagem de status para ler seu conteúdo completo.
 Duplo clique adiciona apenas o registro clicado: cabeçalhos e áreas vazias não
 adicionam a seleção anterior. Limpar a seleção também limpa o outro painel.
 
-As imagens abaixo registram o layout anterior, incluindo pesquisa,
+As imagens abaixo mostram a interface atual, incluindo pesquisa,
 filtro de créditos, lista A2 e comparação. As tabelas mantêm as colunas
 aprovadas, sem a coluna **Tipo**, e **Registro** é dimensionado pelo conteúdo.
 Use a barra horizontal para ler linhas longas por inteiro e arraste a divisória
@@ -86,16 +85,18 @@ central para ampliar um dos painéis.
 
 #### Tela principal e comparação
 
-![Layout anterior no tema escuro, com pesquisa e comparação A1 × A2](docs/images/tela-inicial.png)
+![Interface atual no tema escuro, com pesquisa e comparação A1 × A2](docs/images/tela-inicial.png)
 
-![Layout anterior no tema claro, com cartões, ícones e linhas alternadas](docs/images/tema-claro.png)
+![Menu lateral expandido, sobreposto à área de trabalho](docs/images/menu-expandido.png)
+
+![Interface atual no tema claro, com cartões, ícones e linhas alternadas](docs/images/tema-claro.png)
 
 ### Lista A2
 
 Mostra os registros escolhidos, mantendo a referência original do A1. Permite
 filtrar, remover e exportar a seleção.
 
-![Lista A2 no layout anterior, com valores e referências das linhas do A1](docs/images/lista-a2.png)
+![Lista A2 na interface atual, com valores e referências das linhas do A1](docs/images/lista-a2.png)
 
 ### Pesquisa compartilhada
 
@@ -103,7 +104,7 @@ Pesquisar `32000` encontra os registros de `320,00` nos dois lados. Neste exempl
 o débito já está no A2 e o crédito ainda falta: o mesmo valor com tipos diferentes
 é conferido separadamente. **Limpar** limpa a pesquisa dos dois painéis.
 
-![Comparação no layout anterior após pesquisar 32000, com um débito conferido e um crédito faltando](docs/images/comparacao.png)
+![Comparação na interface atual após pesquisar 32000, com um débito conferido e um crédito faltando](docs/images/comparacao.png)
 
 ### Capturar documento pelo telefone
 
@@ -256,11 +257,11 @@ O filtro da direita permite conferir somente créditos ou somente débitos; o A1
 continua disponível à esquerda. Os contadores e o relatório acompanham a pesquisa
 e o tipo selecionado. A sequência **Nº** recomeça em 1 e **Linha A1** mantém a referência original.
 
-![Filtro de créditos no layout anterior, com registros encontrados e faltantes](docs/images/creditos.png)
+![Filtro de créditos na interface atual, com registros encontrados e faltantes](docs/images/creditos.png)
 
 ### Arquivos de referência
 
-[Interface.png](Interface.png) registra a interface anterior ao menu lateral. O [diagrama original](Diagrama.png)
+[Interface.png](Interface.png) mostra a interface atual. O [diagrama original](Diagrama.png)
 é uma referência histórica da organização do projeto, não uma captura do aplicativo.
 
 ## Executar

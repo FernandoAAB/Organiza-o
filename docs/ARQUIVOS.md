@@ -11,7 +11,7 @@ Os componentes distribuídos com o Tesseract estão descritos aqui; seus arquivo
 | `.python-version` | Indica a versão de Python preferida pelas ferramentas de ambiente. |
 | `AGENTS.md` | Orienta a manutenção do projeto, a preservação das regras financeiras e a validação de alterações. |
 | `Diagrama.png` | Imagem de diagrama fornecida com o projeto. |
-| `Interface.png` | Referência visual da interface anterior ao menu lateral recolhível. |
+| `Interface.png` | Captura atual da tela inicial com menu lateral recolhível. |
 | `README.md` | Explica instalação, uso, comparação A1 × A2, captura de documentos e validação. |
 | `Tesseract-OCR/Dependências.md` | Reúne notas de distribuição do Tesseract portátil e referências de ferramentas e modelos. |
 | `Tesseract-OCR/tessdata/configs/alto` | Ativa a saída XML ALTO. |
@@ -45,11 +45,12 @@ Os componentes distribuídos com o Tesseract estão descritos aqui; seus arquivo
 | `Tesseract-OCR/tessdata/pdf.ttf` | Fonte usada pelo Tesseract na geração de PDFs pesquisáveis. |
 | `Tesseract-OCR/tessdata/por.traineddata` | Modelo de reconhecimento de texto em português. |
 | `Tesseract-OCR/tesseract.exe` | Executável do Tesseract para Windows, usado no reconhecimento óptico local. |
-| `docs/images/comparacao.png` | Captura do layout anterior da tela de comparação A1 × A2 para a documentação. |
-| `docs/images/creditos.png` | Captura do layout anterior do filtro de créditos para a documentação. |
-| `docs/images/lista-a2.png` | Captura do layout anterior da aba Lista A2 para a documentação. |
-| `docs/images/tela-inicial.png` | Captura do layout anterior da tela inicial para a documentação. |
-| `docs/images/tema-claro.png` | Captura do layout anterior da interface em tema claro para a documentação. |
+| `docs/images/comparacao.png` | Captura atual da tela de comparação A1 × A2 para a documentação. |
+| `docs/images/creditos.png` | Captura atual do filtro de créditos para a documentação. |
+| `docs/images/lista-a2.png` | Captura atual da aba Lista A2 para a documentação. |
+| `docs/images/tela-inicial.png` | Captura atual da tela inicial para a documentação. |
+| `docs/images/menu-expandido.png` | Captura atual do menu lateral expandido, sobreposto às tabelas. |
+| `docs/images/tema-claro.png` | Captura atual da interface em tema claro para a documentação. |
 | `iniciar.bat` | Inicializador do Windows: verifica o uv, sincroniza dependências com PaddleOCR, prepara modelos e abre main.py; tenta a instalação básica se o preparo opcional falhar. |
 | `fila_ocr.py` | Mantém a fila persistente em SQLite, fotos temporárias separadas, estados, campos, prévias e exclusividade de processamento por pasta. |
 | `main.py` | Implementa o menu lateral recolhível, a interface desktop, leitura e gravação de A1/A2, comparação financeira, marcações de atenção, relatório e captura com OCR. |
