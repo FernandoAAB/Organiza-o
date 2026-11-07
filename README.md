@@ -3,10 +3,23 @@
 Aplicativo desktop em português, feito com CustomTkinter, para pesquisar registros
 do A1, organizar uma seleção no A2 e comparar débitos e créditos em um relatório imprimível.
 
-## Telas atuais
+## Interface e navegação
 
-Capturas reais do aplicativo com dados fictícios, sem alterar arquivos de uso.
-A aparência das fontes pode variar conforme o sistema operacional.
+O menu lateral começa recolhido, mostrando apenas ícones. Passe o mouse sobre ele
+para ver **Buscar e comparar**, **Lista A2**, **Captura** e **Aparência**. Ao sair,
+ele recolhe após uma breve pausa. A expansão se sobrepõe ao conteúdo, sem deslocar
+as tabelas; os botões também podem receber foco com Tab.
+
+**Aparência**, na parte inferior do menu, abre os seletores de tema e cor ao lado
+da barra. Esse painel permanece aberto até você clicar novamente em **Aparência**.
+As preferências são salvas. **Esmeralda** é o destaque inicial; preferências já
+salvas continuam válidas. Os ícones são desenhados pelo aplicativo, sem depender
+de símbolos especiais nas fontes do computador.
+
+As capturas desta página usam dados fictícios e mostram a versão anterior ao
+menu lateral. Elas continuam ilustrando os registros e as regras de conferência,
+mas a posição dos controles mudou conforme descrito abaixo. A aparência das
+fontes pode variar conforme o sistema operacional.
 
 ### Tela inicial — Buscar e comparar
 
@@ -15,28 +28,34 @@ Uma única pesquisa filtra os dois painéis. Ao selecionar e usar **Adicionar ao
 a situação é atualizada ao lado, mantendo a pesquisa. Arraste a divisória central
 para ajustar o espaço de cada painel.
 
-A composição visual segue as referências clara e escura do briefing: título,
-abas, seletores de tema/cor e **Aparência** na mesma linha, com 46 pixels.
-A pesquisa tem ícone de lupa, campo **Pesquisar**, **Buscar** e **Limpar**, ao lado
-dos cartões **Registros A1**, **Conferidos** e **Faltando no A2**. Os cartões
-acompanham os dados exibidos: **Conferidos** conta somente lançamentos OK,
-considerando a pesquisa e o filtro de tipo.
+A faixa superior reúne, na mesma linha, o campo **Pesquisar**, os botões
+**Buscar**, **Limpar** e **Relatório** e os quatro contadores compactos:
+
+| Indicador | Símbolo | O que mostra |
+| --- | --- | --- |
+| Registros A1 | Documento | Quantidade de registros do A1 exibidos pela pesquisa. |
+| Conferidos | Confirmação verde | Lançamentos OK na conferência exibida. |
+| Faltando no A2 | Alerta vermelho | Lançamentos exibidos que ainda faltam no A2. |
+| Atenção | Triângulo amarelo | Marcações de atenção visíveis. |
+
+O campo de pesquisa usa a largura restante da faixa. Os contadores ficam
+agrupados, com ícones próximos dos números e dos textos, sem esticar os cartões
+por toda a tela. O título grande acima da pesquisa foi removido para liberar
+altura às tabelas. Os contadores da conferência acompanham a pesquisa e o filtro
+de tipo.
+
 As tabelas ficam alinhadas em painéis com bordas finas, larguras iniciais iguais
 e linhas alternadas. As contagens ficam junto dos títulos, na mesma linha.
 **Adicionar ao A2** fica no rodapé do A1, ao lado da quantidade selecionada,
-e só é habilitado com uma seleção. **Atualizar** e **Relatório** ficam no rodapé
-da conferência. O filtro **Todos / Débitos / Créditos** fica no mesmo rodapé,
-à esquerda dos botões. Os botões têm 30 a 32 pixels e a pesquisa tem 34 pixels.
+e só é habilitado com uma seleção. **Atualizar** fica no rodapé da conferência;
+o filtro **Todos / Débitos / Créditos** fica à esquerda nesse mesmo rodapé.
+**Relatório** fica junto da pesquisa e usa a pesquisa confirmada e o filtro de
+tipo da conferência.
+
 As linhas de 27 pixels, com fonte de 13 pixels, permitem exibir mais registros.
-As tabelas crescem com a janela até os botões inferiores; o rodapé global tem
-24 pixels e reúne contadores, quantidade selecionada e estado da atualização. As medidas acompanham a
-escala do sistema e são iguais nos temas claro e escuro.
-Os seletores de tema e cor ficam visíveis no cabeçalho e podem ser recolhidos
-pelo botão **Aparência**. Quando a largura da janela ou a fonte do sistema
-não permite acomodar tudo, os seletores ocupam uma segunda linha; ao ampliar
-a janela, voltam para a primeira. Os controles usam ícones desenhados no aplicativo,
-sem depender de símbolos especiais nas fontes do computador.
-**Esmeralda** é o destaque inicial; as preferências já salvas continuam válidas.
+As tabelas crescem com a janela até os botões inferiores; o rodapé global reúne
+contadores, quantidade selecionada e estado da atualização em uma única linha.
+As medidas acompanham a escala do sistema e são iguais nos temas claro e escuro.
 A situação aparece antes do registro, ficando visível mesmo em linhas longas.
 Na conferência, registros **OK** ficam em verde e **FALTA NO A2** em vermelho,
 tanto no tema claro quanto no escuro.
@@ -52,14 +71,14 @@ linhas sem valor marcado com D/C. Essa apresentação não altera o registro ori
 arquivos, a pesquisa ou as regras de comparação.
 
 As barras de rolagem aparecem apenas quando há conteúdo fora da área visível.
-O cabeçalho aproveita melhor a altura da janela, e o filtro da Lista A2 se
+A faixa superior compacta libera altura para as tabelas, e o filtro da Lista A2 se
 expande com a largura disponível. A janela inicial considera o tamanho da tela;
 mensagens longas no rodapé são abreviadas para manter uma única linha.
 Clique na mensagem de status para ler seu conteúdo completo.
 Duplo clique adiciona apenas o registro clicado: cabeçalhos e áreas vazias não
 adicionam a seleção anterior. Limpar a seleção também limpa o outro painel.
 
-As imagens abaixo formam a galeria visual atual do aplicativo, incluindo pesquisa,
+As imagens abaixo registram o layout anterior, incluindo pesquisa,
 filtro de créditos, lista A2 e comparação. As tabelas mantêm as colunas
 aprovadas, sem a coluna **Tipo**, e **Registro** é dimensionado pelo conteúdo.
 Use a barra horizontal para ler linhas longas por inteiro e arraste a divisória
@@ -67,16 +86,16 @@ central para ampliar um dos painéis.
 
 #### Tela principal e comparação
 
-![Tela principal atual no tema escuro, com Aparência expandida, pesquisa e comparação A1 × A2](docs/images/tela-inicial.png)
+![Layout anterior no tema escuro, com pesquisa e comparação A1 × A2](docs/images/tela-inicial.png)
 
-![Tela principal atual no tema claro, com cartões, ícones e linhas alternadas](docs/images/tema-claro.png)
+![Layout anterior no tema claro, com cartões, ícones e linhas alternadas](docs/images/tema-claro.png)
 
 ### Lista A2
 
 Mostra os registros escolhidos, mantendo a referência original do A1. Permite
 filtrar, remover e exportar a seleção.
 
-![Lista A2 atual no tema claro, com valores e referências das linhas do A1](docs/images/lista-a2.png)
+![Lista A2 no layout anterior, com valores e referências das linhas do A1](docs/images/lista-a2.png)
 
 ### Pesquisa compartilhada
 
@@ -84,7 +103,7 @@ Pesquisar `32000` encontra os registros de `320,00` nos dois lados. Neste exempl
 o débito já está no A2 e o crédito ainda falta: o mesmo valor com tipos diferentes
 é conferido separadamente. **Limpar** limpa a pesquisa dos dois painéis.
 
-![Comparação atual após pesquisar 32000, com um débito conferido e um crédito faltando](docs/images/comparacao.png)
+![Comparação no layout anterior após pesquisar 32000, com um débito conferido e um crédito faltando](docs/images/comparacao.png)
 
 ### Capturar documento pelo telefone
 
@@ -237,11 +256,11 @@ O filtro da direita permite conferir somente créditos ou somente débitos; o A1
 continua disponível à esquerda. Os contadores e o relatório acompanham a pesquisa
 e o tipo selecionado. A sequência **Nº** recomeça em 1 e **Linha A1** mantém a referência original.
 
-![Filtro atual de créditos, com registros encontrados e faltantes](docs/images/creditos.png)
+![Filtro de créditos no layout anterior, com registros encontrados e faltantes](docs/images/creditos.png)
 
 ### Arquivos de referência
 
-[Interface.png](Interface.png) mostra a interface atual. O [diagrama original](Diagrama.png)
+[Interface.png](Interface.png) registra a interface anterior ao menu lateral. O [diagrama original](Diagrama.png)
 é uma referência histórica da organização do projeto, não uma captura do aplicativo.
 
 ## Executar
@@ -266,8 +285,8 @@ do repositório; ao editar manualmente, salve como CRLF e sem BOM.
 ## Atualizar a cópia no computador
 
 Uma atualização no GitHub não substitui o programa já salvo no computador. A versão
-atual tem os cartões **Registros A1**, **Conferidos** e **Faltando no A2**, além das
-duas tabelas lado a lado. [Veja a captura atual](Interface.png).
+atual tem menu lateral recolhível, pesquisa e **Relatório** na mesma linha dos
+quatro contadores, além das duas tabelas lado a lado.
 
 Se você clonou o projeto com Git, feche o programa e execute na pasta do projeto:
 
@@ -296,7 +315,7 @@ mouse sobre ele para ver **Buscar e comparar**, **Lista A2**, **Captura** e
 à área de trabalho, sem deslocar as tabelas. Os botões também recebem foco com Tab.
 **Aparência** abre os seletores de tema e cor ao lado do menu e permanece aberta
 até você clicar novamente no botão. Na busca, **Relatório** fica na mesma linha
-de **Buscar** e **Limpar**. Os quatro indicadores conservam seus ícones e cores.
+de **Buscar**, **Limpar** e dos quatro indicadores com seus ícones e cores.
 
 1. Preencha `a1.txt` com um registro por linha. Linhas vazias são ignoradas,
    preservando a numeração original. Use UTF‑8; arquivos UTF‑8 com BOM também são aceitos.
@@ -330,7 +349,7 @@ de **Buscar** e **Limpar**. Os quatro indicadores conservam seus ícones e cores
 Para marcar um lançamento como **Atenção**, dê dois cliques em qualquer célula
 da linha na tabela **Conferência A1 × A2** (painel da direita). A linha ganha
 texto e fundo em tom amarelo; dê dois cliques novamente para remover a marcação.
-O novo cartão **Atenção**, com ícone amarelo no topo, conta as marcações visíveis,
+O contador **Atenção**, com ícone amarelo no topo, conta as marcações visíveis,
 acompanhando a pesquisa e o filtro de débitos/créditos. A situação **OK** ou
 **FALTA NO A2** e os contadores financeiros continuam representando a comparação.
 
@@ -408,6 +427,12 @@ O [workflow de testes](.github/workflows/tests.yml) executa a suíte completa no
 Windows e no Linux, com Python 3.11 e 3.12, em pushes para `main` e pull requests.
 Os testes usam arquivos temporários, preservando os dados de uso. As orientações
 para agentes estão em [AGENTS.md](AGENTS.md).
+
+A validação do menu inclui expansão/recolhimento sem deslocar as tabelas,
+troca das telas e acesso a **Aparência**. O teste das barras de rolagem reserva
+espaço para os dois painéis e para o menu: verifica a barra oculta quando o
+conteúdo cabe e visível quando o painel é estreitado. Isso evita depender do
+tamanho inicial do monitor ou do DPI do Windows.
 
 As práticas foram adaptadas do repositório [mattpocock/skills](https://github.com/mattpocock/skills/tree/5beb35b040e3de97e54fa9e386d7e42d15c295c2),
 especialmente [writing-for-agents](https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/writing-for-agents/SKILL.md)
