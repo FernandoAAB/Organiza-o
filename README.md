@@ -58,8 +58,9 @@ As medidas acompanham a escala do sistema e são iguais nos temas claro e escuro
 A situação aparece antes do registro, ficando visível mesmo em linhas longas.
 Na conferência, registros **OK** ficam em verde e **FALTA NO A2** em vermelho,
 tanto no tema claro quanto no escuro.
-O tema escuro usa fundos em azul profundo e o claro mantém os painéis brancos,
-com bordas discretas e faixas alternadas para acompanhar cada linha.
+O tema escuro usa fundos em azul profundo. O tema claro diferencia o fundo
+cinza-azulado, os campos brancos e os painéis claros, com bordas mais marcadas,
+cabeçalhos sombreados e faixas alternadas de maior contraste nas tabelas.
 A seleção da conferência preserva o verde e o vermelho sobre um fundo azul
 adequado a cada tema; linhas selecionadas no A1 e na Lista A2 usam texto branco.
 O botão de inclusão fica neutro enquanto não houver seleção.
