@@ -215,6 +215,53 @@ def salvar_atencoes(marcacoes):
     salvar_linhas(ARQUIVO_ATENCAO, [json.dumps(dados, ensure_ascii=False, indent=2)])
 
 
+def identificar_vencimento(texto):
+    """Prioriza o rótulo de vencimento; datas ambíguas exigem revisão."""
+    padrao = r"\b\d{2}[./-]\d{2}[./-](?:\d{4}|\d{2})\b"
+    rotulo = r"\b(?:vencimento|venc\.?|vcto\.?)\b"
+    outro_rotulo = r"\b(?:emiss[aã]o|pagamento|agendamento|processamento|documento)\b"
+
+    def validar(valor):
+        valor = valor.replace(".", "/").replace("-", "/")
+        try:
+            datetime.strptime(valor, "%d/%m/%Y" if len(valor) == 10 else "%d/%m/%y")
+        except ValueError:
+            return ""
+        return valor
+
+    linhas = [linha.strip() for linha in texto.splitlines() if linha.strip()]
+    candidatos = set()
+    encontrou_rotulo = False
+    vencimento_invalido = False
+    for indice, linha in enumerate(linhas):
+        for marcador in re.finditer(rotulo, linha, re.I):
+            encontrou_rotulo = True
+            trecho = re.split(outro_rotulo + "|" + rotulo, linha[marcador.end():],
+                              maxsplit=1, flags=re.I)[0]
+            datas = re.findall(padrao, trecho)
+            if not datas and not trecho.strip(" :.-") and indice + 1 < len(linhas):
+                proxima = linhas[indice + 1]
+                if re.fullmatch(r"[\s:.-]*(" + padrao + r")[\s.]*", proxima):
+                    datas = re.findall(padrao, proxima)
+            candidatos.update(valor for data in datas if (valor := validar(data)))
+            if not datas or any(not validar(data) for data in datas):
+                vencimento_invalido = True
+    if encontrou_rotulo:
+        if len(candidatos) == 1 and not vencimento_invalido:
+            return candidatos.pop(), ""
+        return "", "Vencimento ausente, inválido ou com mais de uma data. Informe o vencimento para continuar."
+    datas = {valor for data in re.findall(padrao, texto) if (valor := validar(data))}
+    data_outro_campo = re.search(
+        outro_rotulo + r"(?:[ \t]*:?[ \t]*|\s*:\s*)" + padrao, texto, re.I)
+    if datas and data_outro_campo:
+        return "", "Vencimento não identificado entre as datas do documento. Informe o vencimento para continuar."
+    if len(datas) == 1:
+        return datas.pop(), ""
+    if datas:
+        return "", "Há várias datas e nenhum vencimento identificado. Informe o vencimento para continuar."
+    return "", ""
+
+
 def interpretar_texto_documento(texto):
     """Extrai campos financeiros priorizando rótulos comuns de documentos."""
     padrao_valor = (
@@ -233,14 +280,14 @@ def interpretar_texto_documento(texto):
             valores_contextuais.extend(encontrados)
     valores = valores_contextuais or todos_valores
     valor = valores[-1].replace(".", "").replace(",", ".").lstrip("+") if valores else ""
-    datas = re.findall(r"\b\d{2}[./-]\d{2}[./-]\d{2,4}\b", texto)
+    data, _ = identificar_vencimento(texto)
     tipo = "D" if re.search(r"\b(?:d[eé]bito|pagamento|compra|total a pagar)\b", texto, re.I) else ""
     if not tipo and re.search(r"\b(?:cr[eé]dito|recebimento|entrada)\b", texto, re.I):
         tipo = "C"
     descricao = linhas[0][:120] if linhas else ""
     return {
         "descricao": descricao,
-        "data": datas[0].replace(".", "/").replace("-", "/") if datas else "",
+        "data": data,
         "valor": valor,
         "tipo": tipo,
     }
@@ -1665,13 +1712,17 @@ class App(ctk.CTk):
 
     def apresentar_resultado_ocr(self, texto, aviso):
         campos = interpretar_texto_documento(texto)
+        _, aviso_data = identificar_vencimento(texto)
+        if aviso_data:
+            aviso = " ".join(item for item in (aviso_data, aviso) if item)
         self.captura_descricao.set(campos["descricao"])
         self.captura_data.set(campos["data"])
         self.captura_valor.set(campos["valor"])
         self.captura_tipo.set(campos["tipo"])
         self.captura_texto.delete("1.0", "end")
         self.captura_texto.insert("1.0", texto)
-        if not campos["data"] or not campos["valor"] or campos["tipo"] not in ("D", "C"):
+        if ((not campos["data"] and not aviso_data) or not campos["valor"]
+                or campos["tipo"] not in ("D", "C")):
             motivo = aviso or "Não foi possível identificar data, valor e tipo na imagem."
             if self.captura_id is not None:
                 self.fila_ocr.marcar_erro(self.captura_id, motivo)

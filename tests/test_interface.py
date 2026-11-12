@@ -198,6 +198,24 @@ class InterfaceTests(unittest.TestCase):
                          ["[1] 03/11/2026 Mercado Teste 123,45D"])
         self.assertIsNone(self.app.captura_pendente)
 
+    def test_captura_usa_vencimento_para_encontrar_a_linha_do_a1(self):
+        Path("a1.txt").write_text(
+            "01/11/2026 Emissao 150,00D\n20/11/2026 Vencimento 150,00D\n", encoding="utf-8")
+        self.app.atualizar_tudo()
+        self.app.apresentar_resultado_ocr(
+            "Emissão: 01/11/2026\nVencimento: 20/11/2026\nTotal a pagar 150,00", "")
+        self.app.update()
+        self.assertEqual(main.carregar_linhas("a2.txt"), ["[2] 20/11/2026 Vencimento 150,00D"])
+
+    def test_datas_ambiguas_aguardam_revisao_mesmo_sem_aviso_dos_motores(self):
+        self.app.apresentar_resultado_ocr(
+            "01/11/2026\n20/11/2026\nTotal a pagar 150,00", "")
+        self.app.update()
+        self.assertEqual(self.app.captura_data.get(), "")
+        self.assertIsNotNone(self.app.captura_pendente)
+        self.assertIn("vencimento", self.app.captura_aviso.get())
+        self.assertEqual(main.carregar_linhas("a2.txt"), [])
+
     def test_descricao_vazia_ou_diferente_nao_bloqueia_busca_por_campos(self):
         Path("a1.txt").write_text("04/11/2026 HISTORICO DO EXTRATO 345,67D\n", encoding="utf-8")
         for descricao in ("", "Nome diferente reconhecido na foto"):

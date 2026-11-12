@@ -91,6 +91,36 @@ class LancamentosComSinalTests(unittest.TestCase):
             "descricao": "Recibo sem valor", "data": "", "valor": "", "tipo": ""
         })
 
+    def test_vencimento_tem_prioridade_sobre_emissao_e_pagamento(self):
+        exemplos = (
+            "Emissão: 01/11/2026\nVencimento: 20/11/2026\nPagamento: 18/11/2026",
+            "Emissão 01/11/2026 Venc. 20.11.2026 Pagamento 18/11/2026",
+            "Data de emissão: 01/11/2026\nVcto:\n20-11-2026\nPagamento: 18/11/2026",
+        )
+        for texto in exemplos:
+            with self.subTest(texto=texto):
+                campos = main.interpretar_texto_documento(texto + "\nTotal a pagar 150,00")
+                self.assertEqual(campos["data"], "20/11/2026")
+                self.assertEqual(campos["valor"], "150.00")
+                self.assertEqual(campos["tipo"], "D")
+
+    def test_datas_ambiguas_ou_vencimento_invalido_nao_usam_a_primeira_data(self):
+        for texto in (
+            "01/11/2026\n20/11/2026",
+            "Emissão: 01/11/2026\nVencimento: 31/11/2026",
+            "Vencimento: 10/11/2026\nVencimento: 20/11/2026",
+            "Vencimento:\nPagamento: 01/11/2026",
+            "Emissão: 01/11/2026",
+        ):
+            with self.subTest(texto=texto):
+                data, aviso = main.identificar_vencimento(texto)
+                self.assertEqual(data, "")
+                self.assertIn("vencimento", aviso.lower())
+
+    def test_data_unica_sem_rotulo_continua_disponivel(self):
+        self.assertEqual(main.identificar_vencimento("Recibo\n20/11/2026\n150,00"),
+                         ("20/11/2026", ""))
+
     def test_documento_encontra_unica_linha_ainda_nao_conferida(self):
         origem = [(4, "03/11/2026 Mercado 123,45D")]
         self.assertEqual(

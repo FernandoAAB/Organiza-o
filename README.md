@@ -124,6 +124,13 @@ pode ser diferente do histórico do extrato ou estar vazia, sem impedir a busca.
 Ela fica disponível para consulta, sem edição. A localização no A1 considera
 somente **data, valor exato e tipo D/C**; se esses três campos coincidirem em
 mais de um lançamento, a inclusão automática aguarda revisão.
+A data prioriza **Vencimento**, **Venc.** ou **Vcto.**, na mesma linha ou com
+a data na linha seguinte. Emissão e pagamento identificados por rótulo não
+substituem o vencimento. Se houver várias datas sem vencimento claro, vencimento
+inválido ou vencimentos diferentes, informe a data manualmente na revisão.
+Uma única data válida sem rótulo continua sendo utilizada. A verificação ocorre
+também quando Tesseract e PaddleOCR concordam, para evitar a escolha automática
+da primeira data de um documento ambíguo.
 Revise e edite data, valor e tipo e clique em
 **Verificar no A1 e adicionar ao A2**. O programa só inclui automaticamente
 quando encontra uma única linha do A1 com a mesma data, valor e tipo D/C.
