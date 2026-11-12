@@ -37,7 +37,7 @@ A faixa superior reúne, na mesma linha, o campo **Pesquisar**, os botões
 | Faltando no A2 | Alerta vermelho | Lançamentos exibidos que ainda faltam no A2. |
 | Atenção | Triângulo amarelo | Marcações de atenção visíveis. |
 
-O campo de pesquisa tem largura compacta para acomodar os botões. Os contadores ficam
+O campo de pesquisa ocupa o espaço disponível depois de acomodar os botões. Os contadores ficam
 agrupados, com ícones próximos dos números e dos textos, sem esticar os cartões
 por toda a tela. O título grande acima da pesquisa foi removido para liberar
 altura às tabelas. Os contadores da conferência acompanham a pesquisa e o filtro

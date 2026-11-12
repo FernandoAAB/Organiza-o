@@ -1897,7 +1897,7 @@ class App(ctk.CTk):
         topo.pack(fill="x", pady=(2, 6))
         topo.grid_columnconfigure(0, weight=1)
         pesquisa = self.barra_pesquisa = ctk.CTkFrame(topo, fg_color="transparent")
-        pesquisa.grid(row=0, column=0, sticky="w", padx=(0, 10))
+        pesquisa.grid(row=0, column=0, sticky="ew", padx=(0, 10))
         pesquisa.grid_columnconfigure(0, weight=1)
         caixa = ctk.CTkFrame(pesquisa, height=34, fg_color=c("campo"), corner_radius=5,
                               border_width=1, border_color=c("borda"))
