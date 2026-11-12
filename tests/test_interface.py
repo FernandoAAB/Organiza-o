@@ -216,6 +216,24 @@ class InterfaceTests(unittest.TestCase):
         self.assertIn("vencimento", self.app.captura_aviso.get())
         self.assertEqual(main.carregar_linhas("a2.txt"), [])
 
+    def test_captura_usa_valor_pago_em_vez_do_valor_original(self):
+        Path("a1.txt").write_text("20/11/2026 Extrato 105,00D\n", encoding="utf-8")
+        self.app.atualizar_tudo()
+        self.app.apresentar_resultado_ocr(
+            "Vencimento: 20/11/2026\nValor pago: R$ 105,00\n"
+            "Valor do documento: R$ 100,00\nJuros: 5,00\nPagamento débito", "")
+        self.app.update()
+        self.assertEqual(main.carregar_linhas("a2.txt"), ["[1] 20/11/2026 Extrato 105,00D"])
+
+    def test_valor_pago_ambiguo_aguarda_preenchimento_manual(self):
+        self.app.apresentar_resultado_ocr(
+            "Vencimento: 20/11/2026\nValor pago: 100,00\nTotal pago: 110,00\nDébito", "")
+        self.app.update()
+        self.assertIsNotNone(self.app.captura_pendente)
+        self.assertEqual(self.app.captura_valor.get(), "")
+        self.assertIn("valor pago", self.app.captura_aviso.get())
+        self.assertEqual(main.carregar_linhas("a2.txt"), [])
+
     def test_descricao_vazia_ou_diferente_nao_bloqueia_busca_por_campos(self):
         Path("a1.txt").write_text("04/11/2026 HISTORICO DO EXTRATO 345,67D\n", encoding="utf-8")
         for descricao in ("", "Nome diferente reconhecido na foto"):

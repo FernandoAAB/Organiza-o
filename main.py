@@ -219,7 +219,7 @@ def identificar_vencimento(texto):
     """Prioriza o rótulo de vencimento; datas ambíguas exigem revisão."""
     padrao = r"\b\d{2}[./-]\d{2}[./-](?:\d{4}|\d{2})\b"
     rotulo = r"\b(?:vencimento|venc\.?|vcto\.?)\b"
-    outro_rotulo = r"\b(?:emiss[aã]o|pagamento|agendamento|processamento|documento)\b"
+    outro_rotulo = r"\b(?:emiss[aã]o|pagamento|pago\s+em|agendamento|processamento|apresenta[cç][aã]o|documento)\b"
 
     def validar(valor):
         valor = valor.replace(".", "/").replace("-", "/")
@@ -262,24 +262,58 @@ def identificar_vencimento(texto):
     return "", ""
 
 
-def interpretar_texto_documento(texto):
-    """Extrai campos financeiros priorizando rótulos comuns de documentos."""
+def identificar_valor_documento(texto):
+    """Associa cada quantia ao seu rótulo, priorizando o valor efetivamente pago."""
     padrao_valor = (
         r"(?<![\d.,])(?:R\$\s*)?"
         r"([+-]?\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\d+,\d{2})(?![\d.,])"
     )
+    rotulos = (
+        r"\b(?:valor\s+(?:efetivamente\s+)?pago|total\s+pago|pago|"
+        r"total\s+a\s+pagar|valor\s+(?:total|a\s+pagar|final|do\s+documento|original)|"
+        r"total|vlr|documento|subtotal|desconto(?:s)?(?:/abatimento)?|"
+        r"abatimento|juros(?:/multa)?|multa|troco)\b"
+    )
     linhas = [linha.strip() for linha in texto.splitlines() if linha.strip()]
-    valores_contextuais = []
-    todos_valores = []
-    for linha in linhas:
-        encontrados = re.findall(padrao_valor, linha, flags=re.IGNORECASE)
-        todos_valores.extend(encontrados)
-        if encontrados and re.search(
-                r"\b(?:total|valor\s+(?:total|a\s+pagar)|vlr|valor\s+final|pago)\b",
-                linha, re.IGNORECASE):
-            valores_contextuais.extend(encontrados)
-    valores = valores_contextuais or todos_valores
+    candidatos = []
+    for indice, linha in enumerate(linhas):
+        marcadores = list(re.finditer(rotulos, linha, re.I))
+        for posicao, marcador in enumerate(marcadores):
+            rotulo = marcador.group().lower()
+            if re.match(r"subtotal|desconto|abatimento|juros|multa|troco", rotulo):
+                continue
+            if rotulo == "pago" and re.search(
+                    r"(?:situa[cç][aã]o|status)\s*:?\s*$", linha[:marcador.start()], re.I):
+                continue
+            fim = marcadores[posicao + 1].start() if posicao + 1 < len(marcadores) else len(linha)
+            trecho = linha[marcador.end():fim].strip(" :—–=")
+            if not trecho and indice + 1 < len(linhas):
+                proxima = linhas[indice + 1]
+                if re.fullmatch(padrao_valor, proxima, re.I):
+                    trecho = proxima
+            quantia = re.match(padrao_valor, trecho, re.I)
+            if quantia:
+                prioridade = 3 if "pago" in rotulo else 2 if ("total" in rotulo or "final" in rotulo or "a pagar" in rotulo) else 1
+                valor = quantia.group(1).replace(".", "").replace(",", ".").lstrip("+")
+                candidatos.append((prioridade, valor))
+    if candidatos:
+        prioridade = max(item[0] for item in candidatos)
+        valores = {Decimal(valor) for nivel, valor in candidatos if nivel == prioridade}
+        if len(valores) == 1:
+            return format(valores.pop(), ".2f"), ""
+        return "", "Há valores diferentes para o mesmo campo. Informe o valor pago para continuar."
+    # Documentos sem rótulos mantêm a leitura monetária simples.
+    valores = [valor for linha in linhas
+               if not re.search(r"\b(?:juros|multa|desconto|abatimento|subtotal|troco)\b", linha, re.I)
+               for valor in re.findall(padrao_valor, linha, re.I)]
     valor = valores[-1].replace(".", "").replace(",", ".").lstrip("+") if valores else ""
+    return valor, ""
+
+
+def interpretar_texto_documento(texto):
+    """Extrai campos financeiros priorizando rótulos comuns de documentos."""
+    linhas = [linha.strip() for linha in texto.splitlines() if linha.strip()]
+    valor, _ = identificar_valor_documento(texto)
     data, _ = identificar_vencimento(texto)
     tipo = "D" if re.search(r"\b(?:d[eé]bito|pagamento|compra|total a pagar)\b", texto, re.I) else ""
     if not tipo and re.search(r"\b(?:cr[eé]dito|recebimento|entrada)\b", texto, re.I):
@@ -1713,15 +1747,16 @@ class App(ctk.CTk):
     def apresentar_resultado_ocr(self, texto, aviso):
         campos = interpretar_texto_documento(texto)
         _, aviso_data = identificar_vencimento(texto)
-        if aviso_data:
-            aviso = " ".join(item for item in (aviso_data, aviso) if item)
+        _, aviso_valor = identificar_valor_documento(texto)
+        if aviso_data or aviso_valor:
+            aviso = " ".join(item for item in (aviso_data, aviso_valor, aviso) if item)
         self.captura_descricao.set(campos["descricao"])
         self.captura_data.set(campos["data"])
         self.captura_valor.set(campos["valor"])
         self.captura_tipo.set(campos["tipo"])
         self.captura_texto.delete("1.0", "end")
         self.captura_texto.insert("1.0", texto)
-        if ((not campos["data"] and not aviso_data) or not campos["valor"]
+        if ((not campos["data"] and not aviso_data) or (not campos["valor"] and not aviso_valor)
                 or campos["tipo"] not in ("D", "C")):
             motivo = aviso or "Não foi possível identificar data, valor e tipo na imagem."
             if self.captura_id is not None:

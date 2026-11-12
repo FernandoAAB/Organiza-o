@@ -91,6 +91,34 @@ class LancamentosComSinalTests(unittest.TestCase):
             "descricao": "Recibo sem valor", "data": "", "valor": "", "tipo": ""
         })
 
+    def test_valor_pago_prioritario_independe_da_ordem_e_dos_acrescimos(self):
+        for rotulo in ("Valor pago", "Total pago", "Pago", "Valor efetivamente pago"):
+            for separador in (": R$ ", "\nR$ "):
+                texto = (f"Vencimento: 20/11/2026\n{rotulo}{separador}105,00\n"
+                         "Valor total: 100,00\nJuros/Multa: 5,00\nDesconto: 0,00\nPagamento débito")
+                with self.subTest(rotulo=rotulo, separador=separador):
+                    campos = main.interpretar_texto_documento(texto)
+                    self.assertEqual(campos["valor"], "105.00")
+                    self.assertEqual(campos["data"], "20/11/2026")
+
+    def test_pago_em_e_situacao_pago_nao_sao_rotulos_de_valor_pago(self):
+        texto = ("Vencimento: 20/11/2026 Pago em 19/11/2026\n"
+                 "Valor do documento: 100,00 Juros: 5,00\nSituação: Pago\n")
+        campos = main.interpretar_texto_documento(texto)
+        self.assertEqual(campos["data"], "20/11/2026")
+        self.assertEqual(campos["valor"], "100.00")
+        self.assertEqual(main.identificar_vencimento("Pago em 19/11/2026")[0], "")
+
+    def test_valores_pagos_conflitantes_exigem_revisao(self):
+        valor, aviso = main.identificar_valor_documento("Valor pago: 100,00\nTotal pago: 110,00")
+        self.assertEqual(valor, "")
+        self.assertIn("valor pago", aviso)
+
+    def test_situacao_pago_sozinha_nao_inventa_valor_nem_tipo(self):
+        campos = main.interpretar_texto_documento("Situação: Pago\nJuros: 5,00")
+        self.assertEqual(campos["valor"], "")
+        self.assertEqual(campos["tipo"], "")
+
     def test_vencimento_tem_prioridade_sobre_emissao_e_pagamento(self):
         exemplos = (
             "Emissão: 01/11/2026\nVencimento: 20/11/2026\nPagamento: 18/11/2026",

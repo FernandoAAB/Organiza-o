@@ -141,9 +141,13 @@ preto e branco calculado pela imagem. Ele escolhe a leitura mais confiante,
 sem substituir letras por números ou inventar caracteres. Se as leituras
 divergirem na data, no valor ou no tipo, ou houver baixa confiança no texto ou
 nos números, o documento aguarda revisão e confirmação manual antes de entrar
-no A2. Cada leitura tem limite de 20 segundos. Na interpretação, rótulos como
-**Total**, **Total a pagar**, **Valor final** e **Pago** têm prioridade sobre
-subtotal, itens e troco.
+no A2. Cada leitura tem limite de 20 segundos. A interpretação associa a quantia
+ao rótulo na mesma linha ou, quando isolado, na linha seguinte. **Valor pago**,
+**Total pago**, **Valor efetivamente pago** e **Pago: R$ ...** têm prioridade
+sobre total a pagar, valor final e valor original/do documento. Juros, multa,
+desconto, subtotal e troco são separados do valor principal. Dois valores pagos
+diferentes exigem revisão manual. **Pago em** indica data de pagamento e não
+substitui o vencimento; **Situação: Pago** indica apenas o estado do documento.
 Se o OCR falhar ou não conseguir identificar os campos essenciais, a folha
 aparece em **Falhas no processamento**, com o motivo e a imagem preservada.
 As outras fotos continuam na fila. No painel do telefone, **Tentar novamente**
