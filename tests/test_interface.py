@@ -1,5 +1,6 @@
 # Testes dos controles e interações da interface usando dados temporários; exigem sessão gráfica.
 import os
+import json
 import gc
 import sys
 import tempfile
@@ -675,6 +676,10 @@ class InterfaceTests(unittest.TestCase):
             self.assertEqual(self.app.tree_busca.winfo_rootx(), x_tabela)
             self.assertEqual(self.app.botao_relatorio.winfo_rooty(),
                              self.app.entrada_busca.winfo_rooty())
+            self.assertEqual(self.app.botao_backup.winfo_rooty(),
+                             self.app.entrada_busca.winfo_rooty())
+            self.assertLess(self.app.botao_backup.winfo_rootx(),
+                            self.app.botao_relatorio.winfo_rootx())
 
     def test_aparencia_permanece_aberta_e_controles_funcionam_no_menu(self):
         self.app.alternar_aparencia()
@@ -692,6 +697,63 @@ class InterfaceTests(unittest.TestCase):
         self.app.update()
         self.assertFalse(self.app.painel_aparencia.winfo_ismapped())
         self.assertFalse(self.app.menu_expandido)
+
+    def test_backup_da_sessao_cria_pasta_com_a1_a2_e_marcacoes(self):
+        self.app.atencoes = {main.chave_atencao(1, "Pagamento -100,00D")}
+        main.salvar_atencoes(self.app.atencoes)
+        nome = "Maria - 12-11-2026"
+        with patch.object(main.simpledialog, "askstring", return_value=nome) as pergunta, \
+                patch.object(main.messagebox, "showinfo") as aviso:
+            self.app.criar_backup_sessao()
+
+        destino = Path("No") / nome
+        self.assertEqual((destino / "a1.txt").read_bytes(), Path("a1.txt").read_bytes())
+        self.assertEqual((destino / "a2.txt").read_bytes(), Path("a2.txt").read_bytes())
+        self.assertEqual((destino / "atencao.json").read_bytes(),
+                         Path("No/atencao.json").read_bytes())
+        self.assertRegex(pergunta.call_args.kwargs["initialvalue"],
+                         r"^Usuário - \d{2}-\d{2}-\d{4}$")
+        aviso.assert_called_once()
+        self.assertIn(nome, self.app.status.get())
+
+    def test_backup_da_sessao_sem_marcacoes_inclui_json_vazio_valido(self):
+        nome = "João - 12-11-2026"
+        with patch.object(main.simpledialog, "askstring", return_value=nome), \
+                patch.object(main.messagebox, "showinfo"):
+            self.app.criar_backup_sessao()
+        dados = json.loads((Path("No") / nome / "atencao.json").read_text(encoding="utf-8"))
+        self.assertEqual(dados, {"versao": 1, "marcacoes": []})
+
+    def test_backup_da_sessao_recusa_nome_invalido_sem_criar_pasta(self):
+        with patch.object(main.simpledialog, "askstring", return_value="../fora"), \
+                patch.object(main.messagebox, "showerror") as aviso:
+            self.app.criar_backup_sessao()
+        aviso.assert_called_once()
+        self.assertFalse(Path("fora").exists())
+
+    def test_backup_preserva_pasta_existente_e_cancelamento_nao_cria_arquivos(self):
+        destino = Path("No/Maria")
+        destino.mkdir(parents=True)
+        (destino / "a1.txt").write_text("backup anterior", encoding="utf-8")
+        with patch.object(main.simpledialog, "askstring", return_value="Maria"), \
+                patch.object(main.messagebox, "showerror") as aviso:
+            self.app.criar_backup_sessao()
+        aviso.assert_called_once()
+        self.assertEqual((destino / "a1.txt").read_text(), "backup anterior")
+        antes = set(Path("No").iterdir())
+        with patch.object(main.simpledialog, "askstring", return_value=None):
+            self.app.criar_backup_sessao()
+        self.assertEqual(set(Path("No").iterdir()), antes)
+
+    def test_backup_falha_de_copia_nao_publica_pasta_parcial(self):
+        originais = [Path(p).read_bytes() for p in ("a1.txt", "a2.txt")]
+        with patch.object(main.simpledialog, "askstring", return_value="Falha"), \
+                patch.object(main.shutil, "copy2", side_effect=OSError("disco cheio")):
+            with self.assertRaises(OSError):
+                self.app.criar_backup_sessao()
+        self.assertFalse(Path("No/Falha").exists())
+        self.assertFalse(list(Path("No").glob("exportacao-*")))
+        self.assertEqual([Path(p).read_bytes() for p in ("a1.txt", "a2.txt")], originais)
 
     def test_redimensionamento_mantem_tabelas_alinhadas_e_controles_visiveis(self):
         def conferir(widget):

@@ -28,7 +28,7 @@ a situação é atualizada ao lado, mantendo a pesquisa. Arraste a divisória ce
 para ajustar o espaço de cada painel.
 
 A faixa superior reúne, na mesma linha, o campo **Pesquisar**, os botões
-**Buscar**, **Limpar** e **Relatório** e os quatro contadores compactos:
+**Buscar**, **Limpar**, **Backup da sessão** e **Relatório** e os quatro contadores compactos:
 
 | Indicador | Símbolo | O que mostra |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ A faixa superior reúne, na mesma linha, o campo **Pesquisar**, os botões
 | Faltando no A2 | Alerta vermelho | Lançamentos exibidos que ainda faltam no A2. |
 | Atenção | Triângulo amarelo | Marcações de atenção visíveis. |
 
-O campo de pesquisa usa a largura restante da faixa. Os contadores ficam
+O campo de pesquisa tem largura compacta para acomodar os botões. Os contadores ficam
 agrupados, com ícones próximos dos números e dos textos, sem esticar os cartões
 por toda a tela. O título grande acima da pesquisa foi removido para liberar
 altura às tabelas. Os contadores da conferência acompanham a pesquisa e o filtro
@@ -50,6 +50,9 @@ e só é habilitado com uma seleção. **Atualizar** fica no rodapé da conferê
 o filtro **Todos / Débitos / Créditos** fica à esquerda nesse mesmo rodapé.
 **Relatório** fica junto da pesquisa e usa a pesquisa confirmada e o filtro de
 tipo da conferência.
+**Backup da sessão** fica imediatamente antes de **Relatório** e guarda uma
+cópia dos registros e das marcações. Em janelas estreitas, os contadores passam
+para a segunda linha para manter os botões e a pesquisa acessíveis.
 
 As linhas de 27 pixels, com fonte de 13 pixels, permitem exibir mais registros.
 As tabelas crescem com a janela até os botões inferiores; o rodapé global reúne
@@ -95,7 +98,7 @@ central para ampliar um dos painéis.
 ### Lista A2
 
 Mostra os registros escolhidos, mantendo a referência original do A1. Permite
-filtrar, remover e exportar a seleção.
+filtrar e remover registros. O backup completo da sessão fica na tela principal.
 
 ![Lista A2 na interface atual, com valores e referências das linhas do A1](docs/images/lista-a2.png)
 
@@ -287,8 +290,8 @@ do repositório; ao editar manualmente, salve como CRLF e sem BOM.
 ## Atualizar a cópia no computador
 
 Uma atualização no GitHub não substitui o programa já salvo no computador. A versão
-atual tem menu lateral recolhível, pesquisa e **Relatório** na mesma linha dos
-quatro contadores, além das duas tabelas lado a lado.
+atual tem menu lateral recolhível, pesquisa, **Backup da sessão** e **Relatório**
+na mesma linha dos quatro contadores, além das duas tabelas lado a lado.
 
 Se você clonou o projeto com Git, feche o programa e execute na pasta do projeto:
 
@@ -316,8 +319,9 @@ mouse sobre ele para ver **Buscar e comparar**, **Lista A2**, **Captura** e
 **Aparência**; ao sair, o menu recolhe após uma breve pausa. A expansão se sobrepõe
 à área de trabalho, sem deslocar as tabelas. Os botões também recebem foco com Tab.
 **Aparência** abre os seletores de tema e cor ao lado do menu e permanece aberta
-até você clicar novamente no botão. Na busca, **Relatório** fica na mesma linha
-de **Buscar**, **Limpar** e dos quatro indicadores com seus ícones e cores.
+até você clicar novamente no botão. Na busca, **Backup da sessão** e **Relatório**
+ficam na mesma linha de **Buscar**, **Limpar** e dos quatro indicadores com seus
+ícones e cores.
 
 1. Preencha `a1.txt` com um registro por linha. Linhas vazias são ignoradas,
    preservando a numeração original. Use UTF‑8; arquivos UTF‑8 com BOM também são aceitos.
@@ -345,8 +349,15 @@ de **Buscar**, **Limpar** e dos quatro indicadores com seus ícones e cores.
    é aberto pelo caminho nativo, aceitando pastas com espaços e acentos. Se a
    abertura automática falhar, o programa avisa e mostra o caminho do HTML salvo
    para você abri-lo manualmente em um navegador.
-5. Em **Lista A2**, filtre, remova registros ou exporte a seleção para `No/N.txt`.
-   A exportação contém todo o A2, na ordem das linhas originais.
+5. Para guardar a sessão, clique em **Backup da sessão**, à esquerda de
+   **Relatório**. O programa sugere `Usuário - DD-MM-AAAA`; substitua “Usuário”
+   pelo nome desejado ou edite o nome completo. Dentro de `No/`, ele cria uma
+   pasta com esse nome e copia `a1.txt`, `a2.txt` e `atencao.json`. Se ainda não
+   houver marcações, o backup inclui um `atencao.json` vazio e válido. Uma pasta
+   existente não é substituída. Para recuperar a sessão em outra cópia do
+   programa, feche o aplicativo e copie esses três arquivos de volta para seus
+   locais: `a1.txt` e `a2.txt` na pasta do programa e `atencao.json` em `No/`.
+6. Em **Lista A2**, filtre ou remova registros. A ordem original do A1 é mantida.
 
 Para marcar um lançamento como **Atenção**, dê dois cliques em qualquer célula
 da linha na tabela **Conferência A1 × A2** (painel da direita). A linha ganha

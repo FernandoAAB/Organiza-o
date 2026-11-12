@@ -10,6 +10,7 @@ from urllib.parse import urlsplit, parse_qs
 import queue
 import os
 import re
+import shutil
 import socket
 import sys
 import threading
@@ -21,8 +22,8 @@ from datetime import datetime
 from decimal import Decimal
 from html import escape
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from tkinter import ttk, messagebox
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tkinter import ttk, messagebox, simpledialog
 from tkinter import font as tkfont
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat, ImageTk
 try:
@@ -1327,7 +1328,8 @@ class App(ctk.CTk):
             kw = dict(fg_color=c("campo"), hover_color=c("campo_hover"),
                       text_color=c("texto"))
         simbolo = {"Aparência": "aparencia", "Adicionar ao A2": "adicionar",
-                   "Atualizar": "atualizar", "Relatório": "arquivo"}.get(texto)
+                   "Atualizar": "atualizar", "Relatório": "arquivo",
+                   "Backup da sessão": "arquivo"}.get(texto)
         imagem = icone(simbolo, "#ffffff" if primario else "cabecalho", 16) if simbolo else None
         b = ctk.CTkButton(pai, text=texto, image=imagem, command=comando, width=largura, height=altura,
                           corner_radius=5, border_width=0 if primario else 1, border_color=c("borda"),
@@ -1894,15 +1896,15 @@ class App(ctk.CTk):
         topo = ctk.CTkFrame(self.aba_busca, fg_color="transparent")
         topo.pack(fill="x", pady=(2, 6))
         topo.grid_columnconfigure(0, weight=1)
-        pesquisa = ctk.CTkFrame(topo, fg_color="transparent")
-        pesquisa.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        pesquisa = self.barra_pesquisa = ctk.CTkFrame(topo, fg_color="transparent")
+        pesquisa.grid(row=0, column=0, sticky="w", padx=(0, 10))
         pesquisa.grid_columnconfigure(0, weight=1)
         caixa = ctk.CTkFrame(pesquisa, height=34, fg_color=c("campo"), corner_radius=5,
                               border_width=1, border_color=c("borda"))
         caixa.grid(row=0, column=0, sticky="ew")
         ctk.CTkLabel(caixa, text="", image=icone("busca", tamanho=16), width=30, height=32).pack(side="left", padx=(6, 0))
         self.busca_var = tk.StringVar()
-        entrada = self.campo(caixa, self.busca_var, "Pesquisar...", largura=110)
+        entrada = self.campo(caixa, self.busca_var, "Pesquisar...", largura=170)
         self.entrada_busca = entrada
         entrada.configure(height=32)
         entrada.pack(side="left", fill="x", expand=True, padx=(0, 4), pady=1)
@@ -1915,9 +1917,12 @@ class App(ctk.CTk):
         self.busca_var.trace_add("write", self.atualizar_dica_busca)
         self.botao(pesquisa, "Buscar", self.buscar_a1, primario=True, largura=84, altura=32).grid(row=0, column=1, padx=(10, 8))
         self.botao(pesquisa, "Limpar", self.mostrar_todos, largura=84, altura=32).grid(row=0, column=2)
+        self.botao_backup = self.botao(
+            pesquisa, "Backup da sessão", self.criar_backup_sessao, largura=142, altura=32)
+        self.botao_backup.grid(row=0, column=3, padx=(12, 0))
         self.botao_relatorio = self.botao(pesquisa, "Relatório", self.imprimir_relatorio, largura=108, altura=32)
-        self.botao_relatorio.grid(row=0, column=3, padx=(12, 0))
-        indicadores = ctk.CTkFrame(topo, fg_color="transparent")
+        self.botao_relatorio.grid(row=0, column=4, padx=(8, 0))
+        indicadores = self.barra_indicadores = ctk.CTkFrame(topo, fg_color="transparent")
         indicadores.grid(row=0, column=1, sticky="e")
         self.indicador_origem = tk.StringVar(value="0")
         self.indicador_ok = tk.StringVar(value="0")
@@ -1940,6 +1945,7 @@ class App(ctk.CTk):
             ctk.CTkLabel(cartao, text=titulo, height=15, anchor="w", text_color=c(cor),
                          font=(FONTE, 11)).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(0, 2))
             self.cartoes_resumo.append(cartao)
+        topo.bind("<Configure>", self.ajustar_barra_pesquisa)
         self.divisao = tk.PanedWindow(self.aba_busca, orient="horizontal", sashwidth=8,
                                      bd=0, sashrelief="flat", showhandle=False,
                                      bg=cm("bg", self.modo), opaqueresize=True)
@@ -1983,6 +1989,18 @@ class App(ctk.CTk):
         self.botao_adicionar.configure(state="disabled")
         self.tree_busca.bind("<Double-1>", self.adicionar_por_duplo_clique)
         self.tree_busca.bind("<<TreeviewSelect>>", self.atualizar_selecao_origem)
+
+    def ajustar_barra_pesquisa(self, evento=None):
+        pesquisa, indicadores = self.barra_pesquisa, self.barra_indicadores
+        topo = pesquisa.master
+        minimo = pesquisa.winfo_reqwidth() + indicadores.winfo_reqwidth()
+        minimo += round(pesquisa._apply_widget_scaling(20))
+        compacta = topo.winfo_width() < minimo
+        linha = 1 if compacta else 0
+        if int(indicadores.grid_info()["row"]) != linha:
+            indicadores.grid(row=linha, column=0 if compacta else 1,
+                             sticky="w" if compacta else "e", pady=(6, 0) if compacta else 0)
+            pesquisa.grid(columnspan=2 if compacta else 1)
 
     def atualizar_dica_busca(self, *args):
         if self.busca_var.get():
@@ -2117,7 +2135,6 @@ class App(ctk.CTk):
         self.campo(topo, self.filtro_a2, "Filtrar lista...").grid(row=0, column=1, sticky="ew")
         self.botao(topo, "Remover", self.remover_a2, perigo=True, largura=140, altura=30).grid(
             row=0, column=2, padx=10)
-        self.botao(topo, "Exportar N.txt", self.exportar, largura=170, altura=30).grid(row=0, column=3)
 
         frame, self.tree_a2 = self._tabela(
             self.aba_a2, [("ordem", "Nº"), ("linha", "Linha A1"), ("texto", "Registro"),
@@ -2161,11 +2178,54 @@ class App(ctk.CTk):
         self.buscar_a1()
         self.status.set(f"{len(sel)} registro(s) removido(s).")
 
-    def exportar(self):
-        os.makedirs(PASTA_REG, exist_ok=True)
-        caminho = os.path.join(PASTA_REG, "N.txt")
-        salvar_linhas(caminho, obter_destino_ordenado())
-        self.status.set(f"✓ Exportado para {os.path.abspath(caminho)}")
+    def criar_backup_sessao(self):
+        """Copia A1, A2 e as marcações para uma pasta identificada pelo usuário."""
+        sugestao = "Usuário - " + datetime.now().strftime("%d-%m-%Y")
+        nome = simpledialog.askstring(
+            "Backup da sessão", "Nome da pasta do backup:",
+            initialvalue=sugestao, parent=self)
+        if nome is None:
+            self.status.set("Backup cancelado.")
+            return
+        nome = nome.strip()
+        reservado = re.fullmatch(r"(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])", nome.split(".")[0])
+        if (not nome or nome in {".", ".."} or nome[-1:] in {".", " "} or reservado
+                or any(ord(caractere) < 32 or caractere in '<>:"/\\|?*' for caractere in nome)):
+            messagebox.showerror(
+                "Nome inválido",
+                "Use um nome de pasta válido, sem caracteres especiais ou nomes reservados do Windows.",
+                parent=self)
+            self.status.set("O backup não foi criado: nome inválido.")
+            return
+
+        base = Path(PASTA_REG).absolute()
+        base.mkdir(parents=True, exist_ok=True)
+        destino = base / nome
+        if destino.exists():
+            messagebox.showerror(
+                "Pasta existente",
+                f"A pasta já existe:\n{destino}\n\nEscolha outro nome.", parent=self)
+            self.status.set("O backup não foi criado porque o nome já existe.")
+            return
+
+        # Monta tudo em uma pasta temporária para não deixar exportação parcial.
+        with TemporaryDirectory(prefix="exportacao-", dir=base) as temporaria:
+            pasta_temporaria = Path(temporaria)
+            for origem in (Path(ARQUIVO_ORIGEM), Path(ARQUIVO_DESTINO)):
+                shutil.copy2(origem, pasta_temporaria / origem.name)
+            origem_atencao = Path(ARQUIVO_ATENCAO)
+            if origem_atencao.is_file():
+                shutil.copy2(origem_atencao, pasta_temporaria / origem_atencao.name)
+            else:
+                dados = {"versao": 1, "marcacoes": []}
+                (pasta_temporaria / origem_atencao.name).write_text(
+                    json.dumps(dados, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8")
+            os.replace(pasta_temporaria, destino)
+        self.status.set(f"✓ Backup da sessão criado em {destino}")
+        messagebox.showinfo(
+            "Backup concluído",
+            f"Arquivos copiados para:\n{destino}", parent=self)
 
     #  aba 3: comparação de débitos e créditos
     def _montar_aba_debitos(self):

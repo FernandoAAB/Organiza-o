@@ -53,7 +53,7 @@ Os componentes distribuídos com o Tesseract estão descritos aqui; seus arquivo
 | `docs/images/tema-claro.png` | Captura atual da interface em tema claro para a documentação. |
 | `iniciar.bat` | Inicializador do Windows: verifica o uv, sincroniza dependências com PaddleOCR, prepara modelos e abre main.py; tenta a instalação básica se o preparo opcional falhar. |
 | `fila_ocr.py` | Mantém a fila persistente em SQLite, fotos temporárias separadas, estados, campos, prévias e exclusividade de processamento por pasta. |
-| `main.py` | Implementa o menu lateral recolhível, a interface desktop, leitura e gravação de A1/A2, comparação financeira, marcações de atenção, relatório e captura com OCR. |
+| `main.py` | Implementa o menu lateral recolhível, a interface desktop, leitura e gravação de A1/A2, backup da sessão, comparação financeira, marcações de atenção, relatório e captura com OCR. |
 | `ocr_paddle.py` | Adaptador opcional do PaddleOCR: inicializa modelos sob demanda, organiza palavras em linhas e sinaliza leituras incertas. |
 | `ocr_runtime.py` | Executa OCR em processo separado e reutilizável, limita o tempo de leitura e encerra processos travados sem bloquear a janela. |
 | `pyproject.toml` | Define os metadados, a versão mínima de Python, as dependências principais e o extra opcional paddle. |
